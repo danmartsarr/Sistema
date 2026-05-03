@@ -91,10 +91,10 @@ def _interpolate(wn: np.ndarray, inten: np.ndarray) -> np.ndarray:
     return result.astype(np.float32)
 
 
-def _infer(spectrum_norm: np.ndarray) -> dict:
+def _infer(spectrum_norm: np.ndarray, spectrum_original: np.ndarray) -> dict:
     """
-    Roda o modelo e computa o mapa de saliência (gradiente × entrada).
-    Retorna polymer, confidence, probabilities e attention (downsampled).
+    Modificado para receber também o espectro original e retornar tudo alinhado
+    para a interface do Flutter sem downsampling.
     """
     x = tf.Variable(spectrum_norm.reshape(1, -1), dtype=tf.float32)
     with tf.GradientTape() as tape:
@@ -109,18 +109,15 @@ def _infer(spectrum_norm: np.ndarray) -> dict:
         saliency /= s_max_
 
     probs_np = probs.numpy()[0]
-    attn = [
-        {"wavenumber": float(WAVENUMBERS[i]), "attention": float(saliency[i])}
-        for i in range(0, len(WAVENUMBERS), ATTN_STEP)
-    ]
+
 
     return {
         "polymer":       CLASS_NAMES[idx],
         "confidence":    float(probs_np[idx]),
-        "probabilities": {cls: float(p) for cls, p in zip(CLASS_NAMES, probs_np)},
-        "attention":     attn,
+        "wavenumbers":   WAVENUMBERS.tolist(),     
+        "intensities":   spectrum_original.tolist(),
+        "attention":     saliency.tolist()         
     }
-
 
 def _extract_spectral_columns(df: pd.DataFrame) -> tuple[list[str], list[float]]:
     """
