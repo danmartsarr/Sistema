@@ -1,0 +1,642 @@
+import 'dart:math';
+import 'package:flutter/material.dart';
+import '../models/spectrum_model.dart';
+import '../models/user_model.dart';
+import '../services/sample_service.dart';
+
+String _buildSampleName(SpectrumDataset? dataset, int index) {
+  String prefix = 'SMP';
+  if (dataset != null) {
+    final words = dataset.name
+        .split(RegExp(r'[\s—/,\-–]+'))
+        .where((w) => w.length >= 3 && RegExp(r'^[A-Za-zÀ-ÿ]').hasMatch(w))
+        .toList();
+    if (words.length >= 2) {
+      prefix = words[0][0].toUpperCase() + words[1][0].toUpperCase();
+    } else if (words.isNotEmpty) {
+      prefix = words[0].substring(0, min(3, words[0].length)).toUpperCase();
+    }
+  }
+  final n = (dataset?.samples.length ?? 0) + 1 + index;
+  return '$prefix-${n.toString().padLeft(3, '0')}';
+}
+
+class AddSampleScreen extends StatefulWidget {
+  final SpectrumSample? existing;
+  final SpectrumDataset? dataset;
+  final UserModel loggedUser;
+
+  const AddSampleScreen({
+    super.key,
+    this.existing,
+    this.dataset,
+    required this.loggedUser,
+  });
+
+  @override
+  State<AddSampleScreen> createState() => _AddSampleScreenState();
+}
+
+class _AddSampleScreenState extends State<AddSampleScreen> {
+  final _formKey = GlobalKey<FormState>();
+  bool _batchMode = false;
+
+  // Campos individuais
+  late final TextEditingController _siteCtrl;
+  late final TextEditingController _notesCtrl;
+  late DateTime _collectionDate;
+  bool _isVerified = false;
+  bool _saving = false;
+
+  // Batch
+  late final TextEditingController _batchSiteCtrl;
+  late final TextEditingController _batchCountCtrl;
+  late final TextEditingController _batchNotesCtrl;
+  bool _batchVerified = false;
+  bool _batchSaving = false;
+
+  bool get _editing => widget.existing != null;
+
+  late final String _autoName;
+
+  DataType get _effectiveDataType =>
+      widget.dataset?.dataType ?? widget.existing?.dataType ?? DataType.absorbance;
+
+  @override
+  void initState() {
+    super.initState();
+    final e = widget.existing;
+    _siteCtrl = TextEditingController(text: e?.collectionSite ?? '');
+    _notesCtrl = TextEditingController(text: e?.notes ?? '');
+    _collectionDate = e?.collectionDate ?? DateTime.now();
+    _isVerified = e?.isVerified ?? false;
+    _batchSiteCtrl = TextEditingController();
+    _batchCountCtrl = TextEditingController(text: '1');
+    _batchNotesCtrl = TextEditingController();
+    _autoName = _editing ? (e?.name ?? '') : _buildSampleName(widget.dataset, 0);
+  }
+
+  @override
+  void dispose() {
+    _siteCtrl.dispose();
+    _notesCtrl.dispose();
+    _batchSiteCtrl.dispose();
+    _batchCountCtrl.dispose();
+    _batchNotesCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pickDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _collectionDate,
+      firstDate: DateTime(2000),
+      lastDate: DateTime.now(),
+      builder: (context, child) => Theme(
+        data: Theme.of(context).copyWith(
+          colorScheme: const ColorScheme.dark(
+            primary: Colors.cyanAccent,
+            onPrimary: Colors.black,
+            surface: Color(0xFF111827),
+            onSurface: Colors.white,
+          ),
+        ),
+        child: child!,
+      ),
+    );
+    if (picked != null) setState(() => _collectionDate = picked);
+  }
+
+  Future<void> _saveSingle() async {
+    if (!_formKey.currentState!.validate()) return;
+    setState(() => _saving = true);
+
+    SpectrumSample sample;
+    if (_editing) {
+      final e = widget.existing!;
+      e.collectionSite = _siteCtrl.text.trim().isEmpty ? 'Não informado' : _siteCtrl.text.trim();
+      e.notes = _notesCtrl.text.trim();
+      e.isVerified = _isVerified;
+      e.verifiedBy = _isVerified ? widget.loggedUser.displayName : '';
+      e.collectionDate = _collectionDate;
+      await SampleService.update(e);
+      if (!mounted) return;
+      Navigator.pop(context, [e]);
+    } else {
+      sample = SpectrumSample(
+        id: 'smp-${DateTime.now().millisecondsSinceEpoch}',
+        name: _autoName,
+        collectionSite: _siteCtrl.text.trim().isEmpty ? 'Não informado' : _siteCtrl.text.trim(),
+        collectionDate: _collectionDate,
+        dataType: _effectiveDataType,
+        spectralData: [],
+        notes: _notesCtrl.text.trim(),
+        isVerified: _isVerified,
+        verifiedBy: _isVerified ? widget.loggedUser.displayName : '',
+      );
+
+      final ok = await SampleService.save(
+          sample, widget.dataset!.id, widget.loggedUser.username);
+      if (!mounted) return;
+
+      if (!ok) {
+        setState(() => _saving = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Erro ao salvar. Verifique a conexão.'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+        return;
+      }
+      Navigator.pop(context, [sample]);
+    }
+  }
+
+  Future<void> _saveBatch() async {
+    final count = int.tryParse(_batchCountCtrl.text.trim()) ?? 0;
+    if (count < 1 || count > 50) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Informe um número entre 1 e 50.')),
+      );
+      return;
+    }
+
+    setState(() => _batchSaving = true);
+    final site = _batchSiteCtrl.text.trim().isEmpty
+        ? 'Não informado'
+        : _batchSiteCtrl.text.trim();
+    final notes = _batchNotesCtrl.text.trim();
+    final ts = DateTime.now().millisecondsSinceEpoch;
+
+    final samples = <SpectrumSample>[];
+    for (int i = 0; i < count; i++) {
+      final s = SpectrumSample(
+        id: 'smp-$ts-$i',
+        name: _buildSampleName(widget.dataset, i),
+        collectionSite: site,
+        collectionDate: DateTime.now(),
+        dataType: _effectiveDataType,
+        spectralData: [],
+        notes: notes,
+        isVerified: _batchVerified,
+        verifiedBy: _batchVerified ? widget.loggedUser.displayName : '',
+      );
+      samples.add(s);
+      await SampleService.save(s, widget.dataset!.id, widget.loggedUser.username);
+    }
+
+    if (!mounted) return;
+    Navigator.pop(context, samples);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ds = widget.dataset;
+
+    return Scaffold(
+      backgroundColor: const Color(0xFF0A0E21),
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        title: Text(
+          _editing ? 'Editar Amostra' : 'Nova Amostra',
+          style: const TextStyle(fontWeight: FontWeight.bold),
+        ),
+      ),
+      body: Form(
+        key: _formKey,
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(20, 8, 20, 40),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+
+            // Contexto do dataset
+            if (ds != null) ...[
+              _SectionLabel('COLETA'),
+              const SizedBox(height: 10),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: Colors.cyanAccent.withValues(alpha: 0.05),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: Colors.cyanAccent.withValues(alpha: 0.2)),
+                ),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(ds.name,
+                      style: const TextStyle(
+                          color: Colors.cyanAccent,
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 6),
+                  Wrap(spacing: 14, runSpacing: 4, children: [
+                    _InfoChip(Icons.biotech_outlined, ds.microscopeMode.label),
+                    _InfoChip(Icons.memory_outlined, ds.detectorType),
+                    _InfoChip(Icons.tune, '${ds.resolution.toInt()} cm⁻¹ · ${ds.numScans} scans'),
+                    if (ds.crystalType != '—')
+                      _InfoChip(Icons.diamond_outlined, ds.crystalType),
+                    _InfoChip(Icons.show_chart,
+                        ds.dataType == DataType.absorbance ? 'Absorbância' : 'Transmitância'),
+                  ]),
+                ]),
+              ),
+              const SizedBox(height: 20),
+            ],
+
+            // Toggle modo (só na criação)
+            if (!_editing) ...[
+              Row(children: [
+                _ModeChip(
+                  label: 'Amostra individual',
+                  icon: Icons.science_outlined,
+                  selected: !_batchMode,
+                  onTap: () => setState(() => _batchMode = false),
+                ),
+                const SizedBox(width: 10),
+                _ModeChip(
+                  label: 'Lote de amostras',
+                  icon: Icons.layers_outlined,
+                  selected: _batchMode,
+                  onTap: () => setState(() => _batchMode = true),
+                ),
+              ]),
+              const SizedBox(height: 24),
+            ],
+
+            // ── MODO INDIVIDUAL ────────────────────────────────────────────
+            if (!_batchMode) ...[
+              _SectionLabel('IDENTIFICAÇÃO'),
+              const SizedBox(height: 10),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.04),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+                ),
+                child: Row(children: [
+                  Icon(Icons.tag, size: 16, color: Colors.cyanAccent.withValues(alpha: 0.7)),
+                  const SizedBox(width: 10),
+                  Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text('ID da Amostra',
+                        style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.4), fontSize: 11)),
+                    const SizedBox(height: 2),
+                    Text(_autoName,
+                        style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 1.0)),
+                  ]),
+                  const Spacer(),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: Colors.cyanAccent.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text('Auto',
+                        style: TextStyle(
+                            color: Colors.cyanAccent.withValues(alpha: 0.7), fontSize: 10)),
+                  ),
+                ]),
+              ),
+              const SizedBox(height: 14),
+              _Field('Local de Coleta', _siteCtrl, hint: 'Ex: Ponto 4 — Orla Norte'),
+              const SizedBox(height: 14),
+
+              // Date picker
+              _SectionLabel('DATA DE COLETA'),
+              const SizedBox(height: 10),
+              GestureDetector(
+                onTap: _pickDate,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.04),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+                  ),
+                  child: Row(children: [
+                    Icon(Icons.calendar_today_outlined,
+                        size: 18, color: Colors.cyanAccent.withValues(alpha: 0.7)),
+                    const SizedBox(width: 12),
+                    Text(_fmtDate(_collectionDate),
+                        style: const TextStyle(color: Colors.white, fontSize: 14)),
+                    const Spacer(),
+                    Text('Alterar',
+                        style: TextStyle(
+                            color: Colors.cyanAccent.withValues(alpha: 0.6), fontSize: 13)),
+                  ]),
+                ),
+              ),
+              const SizedBox(height: 20),
+
+              _SectionLabel('OBSERVAÇÕES'),
+              const SizedBox(height: 10),
+              _Field('Anotações', _notesCtrl,
+                  hint: 'Morfologia, cor, tamanho, condições de coleta…',
+                  maxLines: 3),
+              const SizedBox(height: 24),
+
+              _buildVerificationSection(_isVerified, (v) => setState(() => _isVerified = v)),
+              const SizedBox(height: 32),
+
+              SizedBox(
+                width: double.infinity,
+                height: 52,
+                child: ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.cyanAccent,
+                    foregroundColor: Colors.black,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                    elevation: 0,
+                  ),
+                  onPressed: _saving ? null : _saveSingle,
+                  child: _saving
+                      ? const SizedBox(
+                          width: 20, height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black))
+                      : Text(
+                          _editing ? 'SALVAR ALTERAÇÕES' : 'CADASTRAR AMOSTRA',
+                          style: const TextStyle(
+                              fontSize: 14, fontWeight: FontWeight.bold, letterSpacing: 0.8)),
+                ),
+              ),
+            ],
+
+            // ── MODO LOTE ──────────────────────────────────────────────────
+            if (_batchMode) ...[
+              Container(
+                margin: const EdgeInsets.only(bottom: 20),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.blueAccent.withValues(alpha: 0.06),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.blueAccent.withValues(alpha: 0.2)),
+                ),
+                child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Icon(Icons.info_outline,
+                      size: 15, color: Colors.blueAccent.withValues(alpha: 0.8)),
+                  const SizedBox(width: 8),
+                  Expanded(child: Text(
+                    'Cadastra múltiplas amostras com IDs sequenciais para um mesmo ponto de coleta.',
+                    style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.55), fontSize: 12, height: 1.4),
+                  )),
+                ]),
+              ),
+
+              _SectionLabel('NÚMERO DE AMOSTRAS'),
+              const SizedBox(height: 10),
+              _Field('Quantidade', _batchCountCtrl,
+                  hint: 'Ex: 5',
+                  keyboardType: TextInputType.number),
+              const SizedBox(height: 14),
+
+              _SectionLabel('LOCAL DE COLETA'),
+              const SizedBox(height: 10),
+              _Field('Local compartilhado', _batchSiteCtrl,
+                  hint: 'Ex: Praia do Futuro — Transecto 2'),
+              const SizedBox(height: 14),
+
+              _SectionLabel('OBSERVAÇÕES'),
+              const SizedBox(height: 10),
+              _Field('Anotações (compartilhadas)', _batchNotesCtrl,
+                  hint: 'Condições gerais da coleta…', maxLines: 2),
+              const SizedBox(height: 20),
+
+              // Preview dos IDs
+              Builder(builder: (_) {
+                final count = int.tryParse(_batchCountCtrl.text.trim()) ?? 0;
+                if (count < 1 || count > 50) return const SizedBox();
+                return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  _SectionLabel('IDs QUE SERÃO GERADOS'),
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: List.generate(count, (i) {
+                      final id = _buildSampleName(widget.dataset, i);
+                      return Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: Colors.cyanAccent.withValues(alpha: 0.08),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.cyanAccent.withValues(alpha: 0.2)),
+                        ),
+                        child: Text(id,
+                            style: const TextStyle(
+                                color: Colors.cyanAccent,
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                                letterSpacing: 0.5)),
+                      );
+                    }),
+                  ),
+                  const SizedBox(height: 20),
+                ]);
+              }),
+
+              _buildVerificationSection(
+                  _batchVerified, (v) => setState(() => _batchVerified = v)),
+              const SizedBox(height: 28),
+
+              SizedBox(
+                width: double.infinity,
+                height: 52,
+                child: ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.cyanAccent,
+                    foregroundColor: Colors.black,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                    elevation: 0,
+                  ),
+                  onPressed: _batchSaving ? null : _saveBatch,
+                  child: _batchSaving
+                      ? const SizedBox(
+                          width: 20, height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black))
+                      : const Text('CADASTRAR LOTE',
+                          style: TextStyle(
+                              fontSize: 14, fontWeight: FontWeight.bold, letterSpacing: 0.8)),
+                ),
+              ),
+            ],
+          ]),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildVerificationSection(bool verified, void Function(bool) onToggle) {
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      _SectionLabel('VERIFICAÇÃO DO ANOTADOR'),
+      const SizedBox(height: 12),
+      InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: () => onToggle(!verified),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.04),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+          ),
+          child: Row(children: [
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 180),
+              width: 22, height: 22,
+              decoration: BoxDecoration(
+                color: verified ? Colors.greenAccent.withValues(alpha: 0.2) : Colors.transparent,
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(
+                    color: verified ? Colors.greenAccent : Colors.white30, width: 1.5),
+              ),
+              child: verified
+                  ? const Icon(Icons.check, size: 14, color: Colors.greenAccent)
+                  : null,
+            ),
+            const SizedBox(width: 12),
+            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(
+                'Amostra verificada pelo anotador',
+                style: TextStyle(
+                  color: verified ? Colors.greenAccent : Colors.white70,
+                  fontSize: 14,
+                  fontWeight: verified ? FontWeight.bold : FontWeight.normal,
+                ),
+              ),
+              if (verified) ...[
+                const SizedBox(height: 3),
+                Row(children: [
+                  const Icon(Icons.person, size: 13, color: Colors.greenAccent),
+                  const SizedBox(width: 4),
+                  Text(widget.loggedUser.displayName,
+                      style: const TextStyle(
+                          color: Colors.greenAccent,
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold)),
+                ]),
+              ],
+            ])),
+          ]),
+        ),
+      ),
+    ]);
+  }
+
+  String _fmtDate(DateTime d) =>
+      '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
+}
+
+// ── Widgets ───────────────────────────────────────────────────────────────────
+
+class _SectionLabel extends StatelessWidget {
+  final String text;
+  const _SectionLabel(this.text);
+  @override
+  Widget build(BuildContext context) => Text(text,
+      style: const TextStyle(
+          color: Colors.cyanAccent,
+          fontSize: 11,
+          fontWeight: FontWeight.bold,
+          letterSpacing: 1.2));
+}
+
+class _Field extends StatelessWidget {
+  final String label;
+  final TextEditingController controller;
+  final String? hint;
+  final TextInputType? keyboardType;
+  final int maxLines;
+
+  const _Field(this.label, this.controller,
+      {this.hint, this.keyboardType, this.maxLines = 1});
+
+  @override
+  Widget build(BuildContext context) => TextFormField(
+        controller: controller,
+        style: const TextStyle(color: Colors.white, fontSize: 14),
+        keyboardType: keyboardType,
+        maxLines: maxLines,
+        decoration: InputDecoration(
+          labelText: label,
+          labelStyle:
+              TextStyle(color: Colors.white.withValues(alpha: 0.45), fontSize: 13),
+          hintText: hint,
+          hintStyle:
+              TextStyle(color: Colors.white.withValues(alpha: 0.2), fontSize: 13),
+          filled: true,
+          fillColor: Colors.white.withValues(alpha: 0.04),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide.none),
+          focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: const BorderSide(color: Colors.cyanAccent, width: 1.5)),
+        ),
+      );
+}
+
+class _ModeChip extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final bool selected;
+  final VoidCallback onTap;
+  const _ModeChip(
+      {required this.label,
+      required this.icon,
+      required this.selected,
+      required this.onTap});
+
+  @override
+  Widget build(BuildContext context) => GestureDetector(
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 160),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+          decoration: BoxDecoration(
+            color: selected
+                ? Colors.cyanAccent.withValues(alpha: 0.12)
+                : Colors.white.withValues(alpha: 0.04),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: selected
+                  ? Colors.cyanAccent.withValues(alpha: 0.6)
+                  : Colors.white.withValues(alpha: 0.1),
+            ),
+          ),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            Icon(icon,
+                size: 15,
+                color: selected ? Colors.cyanAccent : Colors.white38),
+            const SizedBox(width: 6),
+            Text(label,
+                style: TextStyle(
+                  color: selected ? Colors.cyanAccent : Colors.white54,
+                  fontSize: 13,
+                  fontWeight: selected ? FontWeight.bold : FontWeight.normal,
+                )),
+          ]),
+        ),
+      );
+}
+
+class _InfoChip extends StatelessWidget {
+  final IconData icon;
+  final String text;
+  const _InfoChip(this.icon, this.text);
+
+  @override
+  Widget build(BuildContext context) =>
+      Row(mainAxisSize: MainAxisSize.min, children: [
+        Icon(icon, size: 12, color: Colors.cyanAccent.withValues(alpha: 0.6)),
+        const SizedBox(width: 4),
+        Text(text,
+            style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.55), fontSize: 12)),
+      ]);
+}
