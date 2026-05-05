@@ -88,7 +88,12 @@ class _DatasetDetailScreenState extends State<DatasetDetailScreen> {
               loggedUser: widget.loggedUser,
             )),
           );
-          if (newSamples != null && newSamples.isNotEmpty) {
+          if (newSamples == null) return;
+          if (newSamples.isEmpty) {
+            // Lista vazia = import por CSV no modo lote: amostras já salvas no
+            // Firebase mas não retornadas em memória. Recarrega tudo.
+            await _loadSamples();
+          } else {
             setState(() => _dataset.samples.addAll(newSamples));
           }
         },
@@ -197,7 +202,10 @@ class _DatasetDetailScreenState extends State<DatasetDetailScreen> {
                                   dataset: _dataset,
                                   loggedUser: widget.loggedUser,
                                   onDelete: () {
-                                    SampleService.delete(_filtered[i].id);
+                                    SampleService.delete(
+                                      _filtered[i].id,
+                                      datasetId: _dataset.id,
+                                    );
                                     setState(() => _dataset.samples.remove(_filtered[i]));
                                     Navigator.pop(context);
                                   },

@@ -1,25 +1,11 @@
-import 'dart:math';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import '../models/spectrum_model.dart';
 import '../models/user_model.dart';
+import '../services/csv_import_service.dart';
 import '../services/sample_service.dart';
-
-String _buildSampleName(SpectrumDataset? dataset, int index) {
-  String prefix = 'SMP';
-  if (dataset != null) {
-    final words = dataset.name
-        .split(RegExp(r'[\s—/,\-–]+'))
-        .where((w) => w.length >= 3 && RegExp(r'^[A-Za-zÀ-ÿ]').hasMatch(w))
-        .toList();
-    if (words.length >= 2) {
-      prefix = words[0][0].toUpperCase() + words[1][0].toUpperCase();
-    } else if (words.isNotEmpty) {
-      prefix = words[0].substring(0, min(3, words[0].length)).toUpperCase();
-    }
-  }
-  final n = (dataset?.samples.length ?? 0) + 1 + index;
-  return '$prefix-${n.toString().padLeft(3, '0')}';
-}
+import '../utils/id_generator.dart';
+import 'import_csv_screen.dart';
 
 class AddSampleScreen extends StatefulWidget {
   final SpectrumSample? existing;
@@ -48,6 +34,12 @@ class _AddSampleScreenState extends State<AddSampleScreen> {
   bool _isVerified = false;
   bool _saving = false;
 
+  // CSV anexado (modo individual)
+  CsvSampleResult? _attachedSpectrum;
+  String? _attachedFileName;
+  bool _attaching = false;
+  String? _attachError;
+
   // Batch
   late final TextEditingController _batchSiteCtrl;
   late final TextEditingController _batchCountCtrl;
@@ -73,7 +65,10 @@ class _AddSampleScreenState extends State<AddSampleScreen> {
     _batchSiteCtrl = TextEditingController();
     _batchCountCtrl = TextEditingController(text: '1');
     _batchNotesCtrl = TextEditingController();
-    _autoName = _editing ? (e?.name ?? '') : _buildSampleName(widget.dataset, 0);
+    // Nome aleatório rastreável: gerado uma vez quando a tela abre.
+    _autoName = _editing
+        ? (e?.name ?? '')
+        : SampleIdGenerator.generateName(widget.dataset?.name ?? 'Amostra');
   }
 
   @override
@@ -107,11 +102,56 @@ class _AddSampleScreenState extends State<AddSampleScreen> {
     if (picked != null) setState(() => _collectionDate = picked);
   }
 
+  Future<void> _attachCsv() async {
+    final picked = await FilePicker.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: const ['csv'],
+    );
+    if (picked == null || picked.files.single.path == null) return;
+
+    setState(() {
+      _attaching = true;
+      _attachError = null;
+      _attachedSpectrum = null;
+      _attachedFileName = picked.files.single.name;
+    });
+
+    try {
+      final results = await CsvImportService.predictFromCsv(
+        picked.files.single.path!,
+        picked.files.single.name,
+      );
+      if (results.isEmpty) {
+        setState(() => _attachError = 'CSV sem amostras válidas.');
+        return;
+      }
+      // Sempre toma a primeira linha — modo individual = uma amostra.
+      setState(() => _attachedSpectrum = results.first);
+      if (results.length > 1 && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(
+              'CSV tem ${results.length} linhas. Apenas a primeira foi usada. '
+              'Para importar todas, use o modo Lote.'),
+          backgroundColor: Colors.orangeAccent.withValues(alpha: 0.9),
+        ));
+      }
+    } catch (e) {
+      setState(() => _attachError = e.toString().replaceFirst('Exception: ', ''));
+    } finally {
+      if (mounted) setState(() => _attaching = false);
+    }
+  }
+
+  void _clearAttachment() => setState(() {
+        _attachedSpectrum = null;
+        _attachedFileName = null;
+        _attachError = null;
+      });
+
   Future<void> _saveSingle() async {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _saving = true);
 
-    SpectrumSample sample;
     if (_editing) {
       final e = widget.existing!;
       e.collectionSite = _siteCtrl.text.trim().isEmpty ? 'Não informado' : _siteCtrl.text.trim();
@@ -122,35 +162,47 @@ class _AddSampleScreenState extends State<AddSampleScreen> {
       await SampleService.update(e);
       if (!mounted) return;
       Navigator.pop(context, [e]);
-    } else {
-      sample = SpectrumSample(
-        id: 'smp-${DateTime.now().millisecondsSinceEpoch}',
-        name: _autoName,
-        collectionSite: _siteCtrl.text.trim().isEmpty ? 'Não informado' : _siteCtrl.text.trim(),
-        collectionDate: _collectionDate,
-        dataType: _effectiveDataType,
-        spectralData: [],
-        notes: _notesCtrl.text.trim(),
-        isVerified: _isVerified,
-        verifiedBy: _isVerified ? widget.loggedUser.displayName : '',
-      );
-
-      final ok = await SampleService.save(
-          sample, widget.dataset!.id, widget.loggedUser.username);
-      if (!mounted) return;
-
-      if (!ok) {
-        setState(() => _saving = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Erro ao salvar. Verifique a conexão.'),
-            backgroundColor: Colors.redAccent,
-          ),
-        );
-        return;
-      }
-      Navigator.pop(context, [sample]);
+      return;
     }
+
+    final attachment = _attachedSpectrum;
+    final notes = _notesCtrl.text.trim();
+    final fullNotes = attachment == null
+        ? notes
+        : [
+            if (notes.isNotEmpty) notes,
+            'CSV anexado: $_attachedFileName (origem: ${attachment.originalCsvName})',
+            'Identificado automaticamente pelo modelo MLP.',
+          ].join('\n');
+
+    final sample = SpectrumSample(
+      id:             SampleIdGenerator.generateInternalId(),
+      name:           _autoName,
+      collectionSite: _siteCtrl.text.trim().isEmpty ? 'Não informado' : _siteCtrl.text.trim(),
+      collectionDate: _collectionDate,
+      dataType:       _effectiveDataType,
+      spectralData:   attachment?.spectralData ?? const [],
+      result:         attachment?.identification,
+      notes:          fullNotes,
+      isVerified:     _isVerified,
+      verifiedBy:     _isVerified ? widget.loggedUser.displayName : '',
+    );
+
+    final ok = await SampleService.save(
+        sample, widget.dataset!.id, widget.loggedUser.username);
+    if (!mounted) return;
+
+    if (!ok) {
+      setState(() => _saving = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Erro ao salvar. Verifique a conexão.'),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+      return;
+    }
+    Navigator.pop(context, [sample]);
   }
 
   Future<void> _saveBatch() async {
@@ -167,17 +219,16 @@ class _AddSampleScreenState extends State<AddSampleScreen> {
         ? 'Não informado'
         : _batchSiteCtrl.text.trim();
     final notes = _batchNotesCtrl.text.trim();
-    final ts = DateTime.now().millisecondsSinceEpoch;
 
     final samples = <SpectrumSample>[];
     for (int i = 0; i < count; i++) {
       final s = SpectrumSample(
-        id: 'smp-$ts-$i',
-        name: _buildSampleName(widget.dataset, i),
+        id: SampleIdGenerator.generateInternalId(),
+        name: SampleIdGenerator.generateName(widget.dataset?.name ?? 'Amostra'),
         collectionSite: site,
         collectionDate: DateTime.now(),
         dataType: _effectiveDataType,
-        spectralData: [],
+        spectralData: const [],
         notes: notes,
         isVerified: _batchVerified,
         verifiedBy: _batchVerified ? widget.loggedUser.displayName : '',
@@ -188,6 +239,30 @@ class _AddSampleScreenState extends State<AddSampleScreen> {
 
     if (!mounted) return;
     Navigator.pop(context, samples);
+  }
+
+  Future<void> _importBatchFromCsv() async {
+    final ds = widget.dataset;
+    if (ds == null) return;
+    final imported = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ImportCsvScreen(
+          dataset:      ds,
+          loggedUser:   widget.loggedUser,
+          defaultSite:  _batchSiteCtrl.text.trim().isEmpty
+              ? null
+              : _batchSiteCtrl.text.trim(),
+          defaultNotes: _batchNotesCtrl.text.trim().isEmpty
+              ? null
+              : _batchNotesCtrl.text.trim(),
+        ),
+      ),
+    );
+    if (imported == true && mounted) {
+      // Sinaliza para o caller que houve mudança — ele recarrega do Firebase.
+      Navigator.pop(context, <SpectrumSample>[]);
+    }
   }
 
   @override
@@ -296,7 +371,7 @@ class _AddSampleScreenState extends State<AddSampleScreen> {
                       color: Colors.cyanAccent.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(8),
                     ),
-                    child: Text('Auto',
+                    child: Text('Aleatório',
                         style: TextStyle(
                             color: Colors.cyanAccent.withValues(alpha: 0.7), fontSize: 10)),
                   ),
@@ -332,6 +407,20 @@ class _AddSampleScreenState extends State<AddSampleScreen> {
                 ),
               ),
               const SizedBox(height: 20),
+
+              if (!_editing) ...[
+                _SectionLabel('DADOS ESPECTRAIS (OPCIONAL)'),
+                const SizedBox(height: 10),
+                _AttachmentBox(
+                  fileName: _attachedFileName,
+                  result:   _attachedSpectrum,
+                  loading:  _attaching,
+                  error:    _attachError,
+                  onPick:   _attachCsv,
+                  onClear:  _clearAttachment,
+                ),
+                const SizedBox(height: 20),
+              ],
 
               _SectionLabel('OBSERVAÇÕES'),
               const SizedBox(height: 10),
@@ -381,7 +470,9 @@ class _AddSampleScreenState extends State<AddSampleScreen> {
                       size: 15, color: Colors.blueAccent.withValues(alpha: 0.8)),
                   const SizedBox(width: 8),
                   Expanded(child: Text(
-                    'Cadastra múltiplas amostras com IDs sequenciais para um mesmo ponto de coleta.',
+                    'Cadastra múltiplas amostras com IDs aleatórios para um '
+                    'mesmo ponto de coleta. Use "Importar de CSV" para criar '
+                    'um lote já com dados espectrais e identificação.',
                     style: TextStyle(
                         color: Colors.white.withValues(alpha: 0.55), fontSize: 12, height: 1.4),
                   )),
@@ -407,38 +498,6 @@ class _AddSampleScreenState extends State<AddSampleScreen> {
                   hint: 'Condições gerais da coleta…', maxLines: 2),
               const SizedBox(height: 20),
 
-              // Preview dos IDs
-              Builder(builder: (_) {
-                final count = int.tryParse(_batchCountCtrl.text.trim()) ?? 0;
-                if (count < 1 || count > 50) return const SizedBox();
-                return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  _SectionLabel('IDs QUE SERÃO GERADOS'),
-                  const SizedBox(height: 10),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: List.generate(count, (i) {
-                      final id = _buildSampleName(widget.dataset, i);
-                      return Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: Colors.cyanAccent.withValues(alpha: 0.08),
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: Colors.cyanAccent.withValues(alpha: 0.2)),
-                        ),
-                        child: Text(id,
-                            style: const TextStyle(
-                                color: Colors.cyanAccent,
-                                fontSize: 12,
-                                fontWeight: FontWeight.bold,
-                                letterSpacing: 0.5)),
-                      );
-                    }),
-                  ),
-                  const SizedBox(height: 20),
-                ]);
-              }),
-
               _buildVerificationSection(
                   _batchVerified, (v) => setState(() => _batchVerified = v)),
               const SizedBox(height: 28),
@@ -458,9 +517,26 @@ class _AddSampleScreenState extends State<AddSampleScreen> {
                       ? const SizedBox(
                           width: 20, height: 20,
                           child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black))
-                      : const Text('CADASTRAR LOTE',
+                      : const Text('CADASTRAR LOTE (IDs ALEATÓRIOS)',
                           style: TextStyle(
-                              fontSize: 14, fontWeight: FontWeight.bold, letterSpacing: 0.8)),
+                              fontSize: 13, fontWeight: FontWeight.bold, letterSpacing: 0.8)),
+                ),
+              ),
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                height: 48,
+                child: OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.cyanAccent,
+                    side: BorderSide(color: Colors.cyanAccent.withValues(alpha: 0.5)),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  ),
+                  onPressed: _batchSaving ? null : _importBatchFromCsv,
+                  icon: const Icon(Icons.upload_file_outlined, size: 18),
+                  label: const Text('IMPORTAR LOTE A PARTIR DE CSV',
+                      style: TextStyle(
+                          fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 0.8)),
                 ),
               ),
             ],
@@ -639,4 +715,120 @@ class _InfoChip extends StatelessWidget {
             style: TextStyle(
                 color: Colors.white.withValues(alpha: 0.55), fontSize: 12)),
       ]);
+}
+
+class _AttachmentBox extends StatelessWidget {
+  final String? fileName;
+  final CsvSampleResult? result;
+  final bool loading;
+  final String? error;
+  final VoidCallback onPick;
+  final VoidCallback onClear;
+
+  const _AttachmentBox({
+    required this.fileName,
+    required this.result,
+    required this.loading,
+    required this.error,
+    required this.onPick,
+    required this.onClear,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (loading) {
+      return Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.04),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+        ),
+        child: Row(children: [
+          const SizedBox(
+            width: 18, height: 18,
+            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.cyanAccent),
+          ),
+          const SizedBox(width: 12),
+          Expanded(child: Text(
+            fileName == null ? 'Identificando…' : 'Identificando $fileName…',
+            style: TextStyle(color: Colors.white.withValues(alpha: 0.7), fontSize: 13),
+          )),
+        ]),
+      );
+    }
+
+    if (result != null) {
+      final id = result!.identification;
+      final color = id.polymer.color;
+      return Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: color.withValues(alpha: 0.3)),
+        ),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            Icon(Icons.check_circle_outline, color: color, size: 18),
+            const SizedBox(width: 8),
+            Expanded(child: Text(
+              fileName ?? 'CSV anexado',
+              style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600),
+              overflow: TextOverflow.ellipsis,
+            )),
+            IconButton(
+              icon: Icon(Icons.close, size: 16, color: Colors.white.withValues(alpha: 0.5)),
+              tooltip: 'Remover anexo',
+              onPressed: onClear,
+            ),
+          ]),
+          const SizedBox(height: 6),
+          Wrap(spacing: 12, runSpacing: 4, children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: color.withValues(alpha: 0.4)),
+              ),
+              child: Text(id.polymer.label,
+                  style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.bold)),
+            ),
+            Text('${(id.confidence * 100).toStringAsFixed(1)}% conf.',
+                style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.bold)),
+            Text('${result!.spectralData.length} pontos',
+                style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 12)),
+          ]),
+        ]),
+      );
+    }
+
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      OutlinedButton.icon(
+        style: OutlinedButton.styleFrom(
+          foregroundColor: Colors.cyanAccent,
+          side: BorderSide(color: Colors.cyanAccent.withValues(alpha: 0.4)),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        ),
+        onPressed: onPick,
+        icon: const Icon(Icons.upload_file_outlined, size: 18),
+        label: const Text('Anexar dados espectrais (CSV, 1 linha)',
+            style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+      ),
+      if (error != null) ...[
+        const SizedBox(height: 8),
+        Text(error!,
+            style: TextStyle(color: Colors.redAccent.withValues(alpha: 0.9), fontSize: 12)),
+      ] else ...[
+        const SizedBox(height: 6),
+        Text(
+          'O CSV é enviado ao modelo MLP para identificação automática. '
+          'Os dados ficam vinculados ao ID aleatório desta amostra.',
+          style: TextStyle(color: Colors.white.withValues(alpha: 0.4), fontSize: 11, height: 1.4),
+        ),
+      ],
+    ]);
+  }
 }

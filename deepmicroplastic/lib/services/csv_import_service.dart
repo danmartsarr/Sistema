@@ -3,15 +3,20 @@ import 'package:http/http.dart' as http;
 import '../models/spectrum_model.dart';
 
 /// Resultado de uma linha do CSV processada pelo servidor.
+///
+/// `originalCsvName` preserva o nome retornado pelo servidor (vem da coluna
+/// "name"/"sample" do CSV) — usado apenas como rastreabilidade. O ID que
+/// identifica a amostra no sistema é gerado aleatoriamente na importação,
+/// não é derivado dele.
 class CsvSampleResult {
   final int row;
-  final String sampleName;
+  final String originalCsvName;
   final IdentificationResult identification;
   final List<SpectralPoint> spectralData;
 
   const CsvSampleResult({
     required this.row,
-    required this.sampleName,
+    required this.originalCsvName,
     required this.identification,
     required this.spectralData,
   });
@@ -86,10 +91,10 @@ class CsvImportService {
     );
 
     return CsvSampleResult(
-      row:            r['row'] as int,
-      sampleName:     r['sample_name'] as String,
-      identification: identification,
-      spectralData:   spectralData,
+      row:             r['row'] as int,
+      originalCsvName: r['sample_name'] as String,
+      identification:  identification,
+      spectralData:    spectralData,
     );
   }
 

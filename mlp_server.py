@@ -5,12 +5,15 @@ Run with:
     /path/to/venv/python mlp_server.py
 
 Endpoints:
-  GET  /health          — status + class list
-  POST /predict         — JSON body: {wavenumbers: [...], intensities: [...]}
-  POST /predict_csv     — multipart file upload: CSV onde cada linha = uma amostra
-                          Colunas com cabeçalho numérico (float) = números de onda.
-                          Colunas categóricas (name, sample, interpretation, etc.)
-                          são detectadas e removidas automaticamente.
+  GET  /health                       — status + class list
+  POST /predict                      — JSON body: {wavenumbers, intensities}
+  POST /predict_csv                  — multipart upload: CSV (linha = amostra)
+  POST /spectra/{dataset_id}         — JSON: {sample_id, wavenumbers, intensities}
+                                       Persiste o espectro num CSV do dataset.
+  GET  /spectra/{dataset_id}/{sample_id}
+                                     — Lê o espectro persistido por ID.
+  DELETE /spectra/{dataset_id}/{sample_id}
+                                     — Remove a linha do espectro.
 
 Preprocessing:
   O modelo foi treinado com MinMaxScaler ajustado nos dados sintéticos.
@@ -32,6 +35,8 @@ from pydantic import BaseModel
 BASE_DIR    = os.path.dirname(os.path.abspath(__file__))
 MODEL_PATH  = os.path.join(BASE_DIR, "MLP_best_model.h5")
 SCALER_PATH = os.path.join(BASE_DIR, "scaler_params.json")
+SPECTRA_DIR = os.path.join(BASE_DIR, "spectra_data")
+os.makedirs(SPECTRA_DIR, exist_ok=True)
 
 # ── Model ─────────────────────────────────────────────────────────────────────
 print(f"Loading model from {MODEL_PATH} ...")
@@ -162,6 +167,19 @@ class PredictRequest(BaseModel):
     intensities: list[float]
 
 
+class SpectrumStoreRequest(BaseModel):
+    sample_id: str
+    wavenumbers: list[float]
+    intensities: list[float]
+
+
+def _spectra_csv_path(dataset_id: str) -> str:
+    safe = "".join(c for c in dataset_id if c.isalnum() or c in "-_")
+    if not safe:
+        raise HTTPException(status_code=400, detail="dataset_id inválido")
+    return os.path.join(SPECTRA_DIR, f"{safe}.csv")
+
+
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
 @app.get("/health")
@@ -252,6 +270,96 @@ async def predict_csv(file: UploadFile = File(...)):
         })
 
     return {"n_samples": len(results), "results": results}
+
+
+# ── Spectra storage ───────────────────────────────────────────────────────────
+#
+# Cada dataset tem um CSV próprio em spectra_data/<dataset_id>.csv.
+# A primeira coluna é o sample_id; as demais são números de onda (header).
+# Lookup é feito lendo o CSV e filtrando pela primeira coluna.
+
+@app.post("/spectra/{dataset_id}")
+def save_spectrum(dataset_id: str, req: SpectrumStoreRequest):
+    """Acrescenta (ou substitui) o espectro de uma amostra no CSV do dataset."""
+    if len(req.wavenumbers) != len(req.intensities):
+        raise HTTPException(
+            status_code=400,
+            detail="wavenumbers e intensities devem ter o mesmo tamanho",
+        )
+
+    path = _spectra_csv_path(dataset_id)
+    new_row = pd.DataFrame(
+        [[req.sample_id] + list(req.intensities)],
+        columns=["sample_id"] + [str(w) for w in req.wavenumbers],
+    )
+
+    if os.path.exists(path):
+        existing = pd.read_csv(path)
+        # Remove linha existente com mesmo sample_id (overwrite idempotente)
+        existing = existing[existing["sample_id"].astype(str) != req.sample_id]
+        # Alinha colunas — se o header diferir, prevalece o existente
+        if list(existing.columns) == list(new_row.columns):
+            df = pd.concat([existing, new_row], ignore_index=True)
+        else:
+            # Header diferente: realinhamos pelo header existente via interpolação
+            wn_existing = np.array([float(c) for c in existing.columns[1:]],
+                                   dtype=np.float32)
+            wn_new      = np.array(req.wavenumbers, dtype=np.float32)
+            inten_new   = np.array(req.intensities, dtype=np.float32)
+            order = np.argsort(wn_new)
+            interp_inten = np.interp(
+                wn_existing, wn_new[order], inten_new[order],
+                left=float(inten_new[order][0]),
+                right=float(inten_new[order][-1]),
+            )
+            aligned = pd.DataFrame(
+                [[req.sample_id] + interp_inten.tolist()],
+                columns=existing.columns,
+            )
+            df = pd.concat([existing, aligned], ignore_index=True)
+    else:
+        df = new_row
+
+    df.to_csv(path, index=False)
+    return {"status": "ok", "sample_id": req.sample_id, "rows": len(df)}
+
+
+@app.get("/spectra/{dataset_id}/{sample_id}")
+def load_spectrum(dataset_id: str, sample_id: str):
+    """Retorna o espectro persistido (wavenumbers + intensities) por ID."""
+    path = _spectra_csv_path(dataset_id)
+    if not os.path.exists(path):
+        raise HTTPException(status_code=404, detail="dataset sem espectros salvos")
+
+    df = pd.read_csv(path)
+    match = df[df["sample_id"].astype(str) == sample_id]
+    if match.empty:
+        raise HTTPException(status_code=404, detail="sample_id não encontrado")
+
+    row = match.iloc[0]
+    wavenumbers = [float(c) for c in df.columns[1:]]
+    intensities = [float(v) for v in row.values[1:]]
+    return {
+        "sample_id":   sample_id,
+        "wavenumbers": wavenumbers,
+        "intensities": intensities,
+    }
+
+
+@app.delete("/spectra/{dataset_id}/{sample_id}")
+def delete_spectrum(dataset_id: str, sample_id: str):
+    path = _spectra_csv_path(dataset_id)
+    if not os.path.exists(path):
+        return {"status": "ok", "removed": 0}
+    df = pd.read_csv(path)
+    before = len(df)
+    df = df[df["sample_id"].astype(str) != sample_id]
+    removed = before - len(df)
+    if df.empty:
+        os.remove(path)
+    else:
+        df.to_csv(path, index=False)
+    return {"status": "ok", "removed": removed}
 
 
 if __name__ == "__main__":

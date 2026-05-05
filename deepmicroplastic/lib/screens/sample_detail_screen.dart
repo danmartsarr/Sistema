@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../models/spectrum_model.dart';
 import '../models/user_model.dart';
 import '../services/mlp_service.dart';
+import '../services/sample_service.dart';
 import '../widgets/ftir_chart.dart';
 import 'add_sample_screen.dart';
 
@@ -26,11 +27,23 @@ class SampleDetailScreen extends StatefulWidget {
 class _SampleDetailScreenState extends State<SampleDetailScreen> {
   late SpectrumSample _sample;
   bool _identifying = false;
+  bool _loadingSpectrum = false;
 
   @override
   void initState() {
     super.initState();
     _sample = widget.sample;
+    if (_sample.spectralData.isEmpty) _hydrate();
+  }
+
+  /// Busca o espectro persistido (CSV no servidor) — cada linha do CSV é
+  /// localizada pelo `sample.id`. Sem isso, o gráfico ficaria vazio depois
+  /// de fechar e reabrir o app.
+  Future<void> _hydrate() async {
+    setState(() => _loadingSpectrum = true);
+    await SampleService.hydrateSpectrum(_sample, widget.dataset.id);
+    if (!mounted) return;
+    setState(() => _loadingSpectrum = false);
   }
 
   Future<void> _runIdentification() async {
@@ -39,6 +52,9 @@ class _SampleDetailScreenState extends State<SampleDetailScreen> {
     if (!mounted) return;
     if (result != null) {
       setState(() => _sample.result = result);
+      // Persiste o resultado (incluindo attentionMap) no Firebase para que
+      // o gráfico com pontos de atenção continue disponível depois.
+      await SampleService.update(_sample);
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -48,6 +64,7 @@ class _SampleDetailScreenState extends State<SampleDetailScreen> {
         ),
       );
     }
+    if (!mounted) return;
     setState(() => _identifying = false);
   }
 
@@ -253,15 +270,31 @@ class _SampleDetailScreenState extends State<SampleDetailScreen> {
                 child: Padding(
                   padding: const EdgeInsets.symmetric(vertical: 12),
                   child: Row(children: [
-                    Icon(Icons.pending_outlined,
-                        color: Colors.white.withValues(alpha: 0.3), size: 22),
-                    const SizedBox(width: 12),
-                    Text(
-                      'Dados espectrais ainda não importados para esta amostra.',
-                      style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.45),
-                          fontSize: 13),
-                    ),
+                    if (_loadingSpectrum) ...[
+                      const SizedBox(
+                        width: 18, height: 18,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: Colors.cyanAccent),
+                      ),
+                      const SizedBox(width: 12),
+                      Text(
+                        'Carregando espectro do servidor (ID ${_sample.id})…',
+                        style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.6),
+                            fontSize: 13),
+                      ),
+                    ] else ...[
+                      Icon(Icons.pending_outlined,
+                          color: Colors.white.withValues(alpha: 0.3), size: 22),
+                      const SizedBox(width: 12),
+                      Expanded(child: Text(
+                        'Sem dados espectrais para esta amostra. '
+                        'Anexe um CSV no cadastro ou importe via "Importar CSV".',
+                        style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.45),
+                            fontSize: 13),
+                      )),
+                    ],
                   ]),
                 ),
               ),

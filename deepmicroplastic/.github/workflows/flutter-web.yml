@@ -3,7 +3,7 @@ name: Flutter Web Deploy
 on:
   push:
     branches:
-      - main # ou master, dependendo de como está sua branch principal
+      - main 
 
 jobs:
   build:

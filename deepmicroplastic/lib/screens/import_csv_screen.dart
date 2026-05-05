@@ -4,15 +4,26 @@ import '../models/spectrum_model.dart';
 import '../models/user_model.dart';
 import '../services/csv_import_service.dart';
 import '../services/sample_service.dart';
+import '../utils/id_generator.dart';
 
 class ImportCsvScreen extends StatefulWidget {
   final SpectrumDataset dataset;
   final UserModel loggedUser;
 
+  /// Local de coleta padrão usado para todas as amostras importadas.
+  /// Quando aberta a partir do fluxo de cadastro de lote, herda do form.
+  final String? defaultSite;
+
+  /// Observações compartilhadas. Substituem o texto-padrão "Identificado…"
+  /// quando preenchido pelo fluxo de cadastro.
+  final String? defaultNotes;
+
   const ImportCsvScreen({
     super.key,
     required this.dataset,
     required this.loggedUser,
+    this.defaultSite,
+    this.defaultNotes,
   });
 
   @override
@@ -62,19 +73,31 @@ class _ImportCsvScreenState extends State<ImportCsvScreen> {
     if (_results.isEmpty) return;
     setState(() => _saving = true);
 
-    final ts = DateTime.now().millisecondsSinceEpoch;
+    final site  = widget.defaultSite?.trim().isNotEmpty == true
+        ? widget.defaultSite!.trim()
+        : 'Importado via CSV';
+    final extra = widget.defaultNotes?.trim();
     int saved = 0;
 
     for (final r in _results) {
+      // ID rastreável aleatório, NÃO derivado do nome do CSV.
+      // O nome original fica registrado nas observações para rastreabilidade.
+      final id          = SampleIdGenerator.generateInternalId();
+      final displayName = SampleIdGenerator.generateName(widget.dataset.name);
+      final traceLine   = 'CSV linha ${r.row + 1} • origem: ${r.originalCsvName}';
+      final notes       = extra == null || extra.isEmpty
+          ? '$traceLine\nIdentificado automaticamente pelo modelo MLP.'
+          : '$extra\n$traceLine\nIdentificado automaticamente pelo modelo MLP.';
+
       final sample = SpectrumSample(
-        id:             'smp-$ts-${r.row}',
-        name:           r.sampleName,
-        collectionSite: 'Importado via CSV',
+        id:             id,
+        name:           displayName,
+        collectionSite: site,
         collectionDate: DateTime.now(),
         dataType:       widget.dataset.dataType,
         spectralData:   r.spectralData,
         result:         r.identification,
-        notes:          'Identificado automaticamente pelo modelo MLP.',
+        notes:          notes,
       );
 
       final ok = await SampleService.save(
@@ -365,10 +388,10 @@ class _ResultRow extends StatelessWidget {
                   color: Colors.white.withValues(alpha: 0.3),
                   fontSize: 11)),
         ),
-        // Nome da amostra
+        // Nome original do CSV (rastreabilidade) — o ID real é gerado no save
         Expanded(
           flex: 3,
-          child: Text(result.sampleName,
+          child: Text(result.originalCsvName,
               style: const TextStyle(
                   color: Colors.white,
                   fontSize: 12,
