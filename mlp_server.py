@@ -115,13 +115,17 @@ def _infer(spectrum_norm: np.ndarray, spectrum_original: np.ndarray) -> dict:
 
     probs_np = probs.numpy()[0]
 
+    attention_list = [
+        {"wavenumber": float(WAVENUMBERS[i]), "attention": float(saliency[i])}
+        for i in range(len(WAVENUMBERS))
+    ]
 
     return {
         "polymer":       CLASS_NAMES[idx],
         "confidence":    float(probs_np[idx]),
         "wavenumbers":   WAVENUMBERS.tolist(),     
         "intensities":   spectrum_original.tolist(),
-        "attention":     saliency.tolist()         
+        "attention":     attention_list  # Agora é uma lista de mapas!
     }
 
 def _extract_spectral_columns(df: pd.DataFrame) -> tuple[list[str], list[float]]:
@@ -199,8 +203,8 @@ def predict(req: PredictRequest):
     inten = np.array(req.intensities, dtype=np.float32)
 
     spectrum = _interpolate(wn, inten)
-    spectrum = _normalize(spectrum)
-    return _infer(spectrum)
+    norm = _normalize(spectrum)
+    return _infer(norm, spectrum)
 
 
 @app.post("/predict_csv")
@@ -249,7 +253,7 @@ async def predict_csv(file: UploadFile = File(...)):
         # Espectro interpolado para grade do modelo
         spectrum = _interpolate(wn_arr, inten)
         norm     = _normalize(spectrum)
-        pred     = _infer(norm)
+        pred     = _infer(norm, spectrum)
 
         # Dados espectrais originais (downsampled para o gráfico)
         step = max(1, len(spectral_cols) // 500)

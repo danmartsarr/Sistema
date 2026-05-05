@@ -65,7 +65,6 @@ class _AddSampleScreenState extends State<AddSampleScreen> {
     _batchSiteCtrl = TextEditingController();
     _batchCountCtrl = TextEditingController(text: '1');
     _batchNotesCtrl = TextEditingController();
-    // Nome aleatório rastreável: gerado uma vez quando a tela abre.
     _autoName = _editing
         ? (e?.name ?? '')
         : SampleIdGenerator.generateName(widget.dataset?.name ?? 'Amostra');
