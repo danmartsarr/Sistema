@@ -3,8 +3,14 @@ import 'firebase_service.dart';
 import 'spectral_storage_service.dart';
 
 class SampleService {
-  static Future<List<SpectrumSample>> loadForDataset(String datasetId) async {
-    final data = await FirebaseService.get('samples');
+  static String _samplesPath(String institutionSlug) =>
+      'institutions/$institutionSlug/samples';
+
+  static Future<List<SpectrumSample>> loadForDataset(
+    String institutionSlug,
+    String datasetId,
+  ) async {
+    final data = await FirebaseService.get(_samplesPath(institutionSlug));
     if (data == null) return [];
     final map = data as Map<String, dynamic>;
     final results = <SpectrumSample>[];
@@ -18,14 +24,16 @@ class SampleService {
     return results;
   }
 
-  /// Carrega o espectro persistido (CSV no servidor) e injeta na amostra.
-  /// Retorna a mesma instância para encadeamento.
+  /// Loads the persisted spectrum (CSV on the server) and injects it into the sample.
+  /// Returns the same instance for chaining.
   static Future<SpectrumSample> hydrateSpectrum(
     SpectrumSample sample,
+    String institutionSlug,
     String datasetId,
   ) async {
     if (sample.spectralData.isNotEmpty) return sample;
     final spectrum = await SpectralStorageService.load(
+      institutionSlug: institutionSlug,
       datasetId: datasetId,
       sampleId: sample.id,
     );
@@ -46,7 +54,7 @@ class SampleService {
         (v) => v.name == m['dataType'],
         orElse: () => DataType.absorbance,
       ),
-      spectralData: const [], // hidratado sob demanda via SpectralStorageService
+      spectralData: const [], // hydrated on demand via SpectralStorageService
       result: result,
       notes: (m['notes'] as String?) ?? '',
       isVerified: (m['isVerified'] as bool?) ?? false,
@@ -90,11 +98,12 @@ class SampleService {
             .toList(),
       };
 
-  /// Persiste a amostra no Firebase. Se houver `spectralData`, ele é gravado
-  /// no CSV do dataset via servidor MLP — assim os dados ficam fora do RTDB
-  /// (que tem limite de tamanho de nó) e ficam exportáveis para retreino.
   static Future<bool> save(
-      SpectrumSample sample, String datasetId, String createdBy) async {
+    SpectrumSample sample,
+    String institutionSlug,
+    String datasetId,
+    String createdBy,
+  ) async {
     final payload = <String, dynamic>{
       'datasetId': datasetId,
       'name': sample.name,
@@ -109,20 +118,27 @@ class SampleService {
       if (sample.result != null) 'result': _resultToMap(sample.result!),
     };
 
-    final ok = await FirebaseService.set('samples/${sample.id}', payload);
+    final ok = await FirebaseService.set(
+      '${_samplesPath(institutionSlug)}/${sample.id}',
+      payload,
+    );
     if (!ok) return false;
 
     if (sample.spectralData.isNotEmpty) {
       await SpectralStorageService.save(
-        datasetId:    datasetId,
-        sampleId:     sample.id,
-        spectralData: sample.spectralData,
+        institutionSlug: institutionSlug,
+        datasetId:       datasetId,
+        sampleId:        sample.id,
+        spectralData:    sample.spectralData,
       );
     }
     return true;
   }
 
-  static Future<bool> update(SpectrumSample sample) async {
+  static Future<bool> update(
+    SpectrumSample sample,
+    String institutionSlug,
+  ) async {
     final patch = <String, dynamic>{
       'collectionSite': sample.collectionSite,
       'notes':          sample.notes,
@@ -130,16 +146,24 @@ class SampleService {
       'verifiedBy':     sample.verifiedBy,
       if (sample.result != null) 'result': _resultToMap(sample.result!),
     };
-    return FirebaseService.update('samples/${sample.id}', patch);
+    return FirebaseService.update(
+      '${_samplesPath(institutionSlug)}/${sample.id}',
+      patch,
+    );
   }
 
-  static Future<bool> delete(String sampleId, {String? datasetId}) async {
-    if (datasetId != null) {
-      await SpectralStorageService.delete(
-        datasetId: datasetId,
-        sampleId: sampleId,
-      );
-    }
-    return FirebaseService.delete('samples/$sampleId');
+  static Future<bool> delete(
+    String institutionSlug,
+    String datasetId,
+    String sampleId,
+  ) async {
+    await SpectralStorageService.delete(
+      institutionSlug: institutionSlug,
+      datasetId: datasetId,
+      sampleId: sampleId,
+    );
+    return FirebaseService.delete(
+      '${_samplesPath(institutionSlug)}/$sampleId',
+    );
   }
 }

@@ -3,15 +3,17 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import '../models/spectrum_model.dart';
 
-/// Persiste e recupera dados espectrais via servidor MLP, em CSVs por dataset.
+/// Persists and retrieves spectral data via the MLP server, in CSV files
+/// scoped per institution and per dataset.
 ///
-/// O servidor mantém `spectra_data/<datasetId>.csv` onde a primeira coluna é o
-/// `sampleId` e as demais são intensidades indexadas pelos números de onda
-/// (header do CSV).
+/// Server keeps `spectra_data/<institutionSlug>/<datasetId>.csv` where the
+/// first column is `sampleId` and the others are intensities indexed by
+/// wavenumbers (CSV header).
 class SpectralStorageService {
   static const String _baseUrl = 'http://localhost:8000';
 
   static Future<bool> save({
+    required String institutionSlug,
     required String datasetId,
     required String sampleId,
     required List<SpectralPoint> spectralData,
@@ -20,7 +22,7 @@ class SpectralStorageService {
     try {
       final res = await http
           .post(
-            Uri.parse('$_baseUrl/spectra/$datasetId'),
+            Uri.parse('$_baseUrl/spectra/$institutionSlug/$datasetId'),
             headers: {'Content-Type': 'application/json'},
             body: jsonEncode({
               'sample_id':   sampleId,
@@ -37,12 +39,14 @@ class SpectralStorageService {
   }
 
   static Future<List<SpectralPoint>> load({
+    required String institutionSlug,
     required String datasetId,
     required String sampleId,
   }) async {
     try {
       final res = await http
-          .get(Uri.parse('$_baseUrl/spectra/$datasetId/$sampleId'))
+          .get(Uri.parse(
+              '$_baseUrl/spectra/$institutionSlug/$datasetId/$sampleId'))
           .timeout(const Duration(seconds: 30));
       if (res.statusCode != 200) return [];
       final json = jsonDecode(res.body) as Map<String, dynamic>;
@@ -59,12 +63,14 @@ class SpectralStorageService {
   }
 
   static Future<bool> delete({
+    required String institutionSlug,
     required String datasetId,
     required String sampleId,
   }) async {
     try {
       final res = await http
-          .delete(Uri.parse('$_baseUrl/spectra/$datasetId/$sampleId'))
+          .delete(Uri.parse(
+              '$_baseUrl/spectra/$institutionSlug/$datasetId/$sampleId'))
           .timeout(const Duration(seconds: 15));
       return res.statusCode == 200;
     } catch (_) {

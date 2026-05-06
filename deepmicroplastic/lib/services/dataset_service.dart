@@ -2,8 +2,11 @@ import '../models/spectrum_model.dart';
 import 'firebase_service.dart';
 
 class DatasetService {
-  static Future<List<SpectrumDataset>> loadAll() async {
-    final data = await FirebaseService.get('datasets');
+  static String _datasetsPath(String institutionSlug) =>
+      'institutions/$institutionSlug/datasets';
+
+  static Future<List<SpectrumDataset>> loadAll(String institutionSlug) async {
+    final data = await FirebaseService.get(_datasetsPath(institutionSlug));
     if (data == null) return [];
     final map = data as Map<String, dynamic>;
     final list = map.entries
@@ -39,37 +42,46 @@ class DatasetService {
       );
 
   static Future<String?> save(
-      SpectrumDataset dataset, String createdBy) async {
+    SpectrumDataset dataset,
+    String institutionSlug,
+    String createdBy,
+  ) async {
     final id = 'ds-${DateTime.now().millisecondsSinceEpoch}';
-    final ok = await FirebaseService.set('datasets/$id', {
-      'name': dataset.name,
-      'description': dataset.description,
-      'location': dataset.location,
-      'createdAt': dataset.createdAt.millisecondsSinceEpoch,
-      'createdBy': createdBy,
-      'microscopeMode': dataset.microscopeMode.name,
-      'microscopeModel': dataset.microscopeModel,
-      'resolution': dataset.resolution,
-      'numScans': dataset.numScans,
-      'detectorType': dataset.detectorType,
-      'crystalType': dataset.crystalType,
-      'dataType': dataset.dataType.name,
-    });
+    final ok = await FirebaseService.set(
+      '${_datasetsPath(institutionSlug)}/$id',
+      {
+        'name': dataset.name,
+        'description': dataset.description,
+        'location': dataset.location,
+        'createdAt': dataset.createdAt.millisecondsSinceEpoch,
+        'createdBy': createdBy,
+        'microscopeMode': dataset.microscopeMode.name,
+        'microscopeModel': dataset.microscopeModel,
+        'resolution': dataset.resolution,
+        'numScans': dataset.numScans,
+        'detectorType': dataset.detectorType,
+        'crystalType': dataset.crystalType,
+        'dataType': dataset.dataType.name,
+      },
+    );
     return ok ? id : null;
   }
 
-  static Future<bool> delete(String datasetId) async {
-    // Remove all samples of this dataset first
-    final data = await FirebaseService.get('samples');
+  static Future<bool> delete(String institutionSlug, String datasetId) async {
+    // Remove all samples of this dataset first.
+    final samplesPath = 'institutions/$institutionSlug/samples';
+    final data = await FirebaseService.get(samplesPath);
     if (data != null) {
       final map = data as Map<String, dynamic>;
       for (final entry in map.entries) {
         final m = entry.value as Map<String, dynamic>;
         if (m['datasetId'] == datasetId) {
-          await FirebaseService.delete('samples/${entry.key}');
+          await FirebaseService.delete('$samplesPath/${entry.key}');
         }
       }
     }
-    return FirebaseService.delete('datasets/$datasetId');
+    return FirebaseService.delete(
+      '${_datasetsPath(institutionSlug)}/$datasetId',
+    );
   }
 }

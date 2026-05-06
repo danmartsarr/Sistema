@@ -1,10 +1,16 @@
 import 'package:flutter/material.dart';
+import '../l10n/app_localizations.dart';
 import '../models/user_model.dart';
 import '../services/auth_service.dart';
 
 class UserFormScreen extends StatefulWidget {
+  final String institutionSlug;
   final UserModel? existing;
-  const UserFormScreen({super.key, this.existing});
+  const UserFormScreen({
+    super.key,
+    required this.institutionSlug,
+    this.existing,
+  });
 
   @override
   State<UserFormScreen> createState() => _UserFormScreenState();
@@ -15,7 +21,6 @@ class _UserFormScreenState extends State<UserFormScreen> {
   late final TextEditingController _usernameCtrl;
   late final TextEditingController _nameCtrl;
   late final TextEditingController _emailCtrl;
-  late final TextEditingController _institutionCtrl;
   late final TextEditingController _departmentCtrl;
   late final TextEditingController _passCtrl;
   late final TextEditingController _pass2Ctrl;
@@ -33,7 +38,6 @@ class _UserFormScreenState extends State<UserFormScreen> {
     _usernameCtrl = TextEditingController(text: e?.username ?? '');
     _nameCtrl = TextEditingController(text: e?.name ?? '');
     _emailCtrl = TextEditingController(text: e?.email ?? '');
-    _institutionCtrl = TextEditingController(text: e?.institution ?? '');
     _departmentCtrl = TextEditingController(text: e?.department ?? '');
     _passCtrl = TextEditingController();
     _pass2Ctrl = TextEditingController();
@@ -45,7 +49,6 @@ class _UserFormScreenState extends State<UserFormScreen> {
     _usernameCtrl.dispose();
     _nameCtrl.dispose();
     _emailCtrl.dispose();
-    _institutionCtrl.dispose();
     _departmentCtrl.dispose();
     _passCtrl.dispose();
     _pass2Ctrl.dispose();
@@ -53,25 +56,25 @@ class _UserFormScreenState extends State<UserFormScreen> {
   }
 
   Future<void> _save() async {
+    final l = AppLocalizations.of(context);
     if (!_formKey.currentState!.validate()) return;
 
-    // Validate passwords for new users
     if (!_isEditing) {
       if (_passCtrl.text.length < 6) {
-        setState(() => _error = 'Senha deve ter ao menos 6 caracteres.');
+        setState(() => _error = l.userFormPasswordTooShort);
         return;
       }
       if (_passCtrl.text != _pass2Ctrl.text) {
-        setState(() => _error = 'As senhas não coincidem.');
+        setState(() => _error = l.userFormPasswordsMismatch);
         return;
       }
     } else if (_passCtrl.text.isNotEmpty) {
       if (_passCtrl.text.length < 6) {
-        setState(() => _error = 'Senha deve ter ao menos 6 caracteres.');
+        setState(() => _error = l.userFormPasswordTooShort);
         return;
       }
       if (_passCtrl.text != _pass2Ctrl.text) {
-        setState(() => _error = 'As senhas não coincidem.');
+        setState(() => _error = l.userFormPasswordsMismatch);
         return;
       }
     }
@@ -86,30 +89,30 @@ class _UserFormScreenState extends State<UserFormScreen> {
       final updated = widget.existing!.copyWith(
         name: _nameCtrl.text.trim(),
         email: _emailCtrl.text.trim(),
-        institution: _institutionCtrl.text.trim(),
         department: _departmentCtrl.text.trim(),
         role: _role,
       );
       ok = await AuthService.updateUser(updated);
       if (ok && _passCtrl.text.isNotEmpty) {
         await AuthService.changePassword(
-            updated.username, _passCtrl.text);
+            widget.institutionSlug, updated.username, _passCtrl.text);
       }
     } else {
       final username = _usernameCtrl.text.trim().toLowerCase();
-      final exists = await AuthService.usernameExists(username);
+      final exists = await AuthService.usernameExists(
+          widget.institutionSlug, username);
       if (exists) {
         setState(() {
           _saving = false;
-          _error = 'Esse nome de usuário já está em uso.';
+          _error = l.userFormUsernameTaken;
         });
         return;
       }
       final user = UserModel(
+        institutionSlug: widget.institutionSlug,
         username: username,
         name: _nameCtrl.text.trim(),
         email: _emailCtrl.text.trim(),
-        institution: _institutionCtrl.text.trim(),
         department: _departmentCtrl.text.trim(),
         role: _role,
         passwordHash: UserModel.hashPassword(_passCtrl.text),
@@ -122,7 +125,7 @@ class _UserFormScreenState extends State<UserFormScreen> {
     if (!ok) {
       setState(() {
         _saving = false;
-        _error = 'Erro ao salvar. Verifique a conexão.';
+        _error = l.userFormSaveError;
       });
       return;
     }
@@ -131,13 +134,14 @@ class _UserFormScreenState extends State<UserFormScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l = AppLocalizations.of(context);
     return Scaffold(
       backgroundColor: const Color(0xFF0A0E21),
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
         title: Text(
-          _isEditing ? 'Editar Usuário' : 'Novo Usuário',
+          _isEditing ? l.userFormTitleEdit : l.userFormTitleNew,
           style: const TextStyle(fontWeight: FontWeight.bold),
         ),
       ),
@@ -146,45 +150,42 @@ class _UserFormScreenState extends State<UserFormScreen> {
         child: SingleChildScrollView(
           padding: const EdgeInsets.fromLTRB(20, 8, 20, 40),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            _SectionLabel('IDENTIFICAÇÃO'),
+            _SectionLabel(l.userFormSectionId),
             const SizedBox(height: 14),
 
             if (!_isEditing) ...[
               _Field(
-                'Usuário (login)',
+                l.userFormUsername,
                 _usernameCtrl,
-                hint: 'Ex: jsilva',
-                validator: (v) =>
-                    (v == null || v.trim().isEmpty) ? 'Campo obrigatório' : null,
+                hint: l.userFormUsernameHint,
+                validator: (v) => (v == null || v.trim().isEmpty)
+                    ? l.addDatasetRequired : null,
               ),
               const SizedBox(height: 14),
             ],
 
             _Field(
-              'Nome completo',
+              l.userFormFullName,
               _nameCtrl,
-              hint: 'Ex: João Silva',
-              validator: (v) =>
-                  (v == null || v.trim().isEmpty) ? 'Campo obrigatório' : null,
+              hint: l.userFormFullNameHint,
+              validator: (v) => (v == null || v.trim().isEmpty)
+                  ? l.addDatasetRequired : null,
             ),
             const SizedBox(height: 14),
-            _Field('E-mail institucional', _emailCtrl,
-                hint: 'Ex: joao@usp.br',
+            _Field(l.userFormEmail, _emailCtrl,
+                hint: l.userFormEmailHint,
                 keyboardType: TextInputType.emailAddress),
             const SizedBox(height: 14),
-            _Field('Instituição', _institutionCtrl,
-                hint: 'Ex: Universidade de São Paulo'),
-            const SizedBox(height: 14),
-            _Field('Departamento / Laboratório', _departmentCtrl,
-                hint: 'Ex: Lab. de Oceanografia'),
+            _Field(l.userFormDepartment, _departmentCtrl,
+                hint: l.userFormDepartmentHint),
 
             const SizedBox(height: 28),
-            _SectionLabel('PERFIL DE ACESSO'),
+            _SectionLabel(l.userFormSectionRole),
             const SizedBox(height: 14),
             Row(children: [
               Expanded(
                 child: _RoleChip(
-                  label: 'Pesquisador',
+                  label: l.userFormRoleResearcher,
                   icon: Icons.science_outlined,
                   selected: _role == 'researcher',
                   onTap: () => setState(() => _role = 'researcher'),
@@ -193,7 +194,7 @@ class _UserFormScreenState extends State<UserFormScreen> {
               const SizedBox(width: 12),
               Expanded(
                 child: _RoleChip(
-                  label: 'Administrador',
+                  label: l.userFormRoleAdmin,
                   icon: Icons.admin_panel_settings_outlined,
                   selected: _role == 'admin',
                   onTap: () => setState(() => _role = 'admin'),
@@ -202,26 +203,32 @@ class _UserFormScreenState extends State<UserFormScreen> {
             ]),
 
             const SizedBox(height: 28),
-            _SectionLabel(_isEditing ? 'ALTERAR SENHA (opcional)' : 'SENHA'),
+            _SectionLabel(_isEditing
+                ? l.userFormSectionPasswordEdit
+                : l.userFormSectionPasswordNew),
             const SizedBox(height: 14),
             _Field(
-              'Senha',
+              l.userFormPassword,
               _passCtrl,
-              hint: _isEditing ? 'Deixe em branco para não alterar' : 'Mín. 6 caracteres',
+              hint: _isEditing
+                  ? l.userFormPasswordHintEdit
+                  : l.userFormPasswordHintNew,
               isPassword: true,
               validator: _isEditing
                   ? null
-                  : (v) => (v == null || v.isEmpty) ? 'Campo obrigatório' : null,
+                  : (v) => (v == null || v.isEmpty)
+                      ? l.addDatasetRequired : null,
             ),
             const SizedBox(height: 14),
             _Field(
-              'Confirmar senha',
+              l.userFormPasswordConfirm,
               _pass2Ctrl,
-              hint: 'Repita a senha',
+              hint: l.userFormPasswordConfirmHint,
               isPassword: true,
               validator: _isEditing
                   ? null
-                  : (v) => (v == null || v.isEmpty) ? 'Campo obrigatório' : null,
+                  : (v) => (v == null || v.isEmpty)
+                      ? l.addDatasetRequired : null,
             ),
 
             if (_error != null) ...[
@@ -253,12 +260,13 @@ class _UserFormScreenState extends State<UserFormScreen> {
                 onPressed: _saving ? null : _save,
                 child: _saving
                     ? const SizedBox(
-                        width: 20,
-                        height: 20,
+                        width: 20, height: 20,
                         child: CircularProgressIndicator(
                             strokeWidth: 2, color: Colors.black))
                     : Text(
-                        _isEditing ? 'SALVAR ALTERAÇÕES' : 'CRIAR USUÁRIO',
+                        _isEditing
+                            ? l.userFormSaveBtnEdit
+                            : l.userFormSaveBtnNew,
                         style: const TextStyle(
                             fontSize: 14,
                             fontWeight: FontWeight.bold,
@@ -272,8 +280,6 @@ class _UserFormScreenState extends State<UserFormScreen> {
     );
   }
 }
-
-// ── Widgets locais ────────────────────────────────────────────────────────────
 
 class _SectionLabel extends StatelessWidget {
   final String text;

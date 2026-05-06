@@ -1,11 +1,15 @@
 import 'package:flutter/material.dart';
+import '../l10n/app_localizations.dart';
+import '../main.dart';
 import '../models/spectrum_model.dart';
 import '../models/user_model.dart';
 import '../services/dataset_service.dart';
-import 'dataset_detail_screen.dart';
+import '../services/sample_service.dart';
 import 'add_dataset_screen.dart';
-import 'manage_users_screen.dart';
+import 'dataset_detail_screen.dart';
 import 'login_screen.dart';
+import 'manage_institutions_screen.dart';
+import 'manage_users_screen.dart';
 
 class FtirOverviewScreen extends StatefulWidget {
   final UserModel loggedUser;
@@ -20,6 +24,8 @@ class _FtirOverviewScreenState extends State<FtirOverviewScreen> {
   bool _loading = true;
   String? _error;
 
+  String get _slug => widget.loggedUser.institutionSlug;
+
   @override
   void initState() {
     super.initState();
@@ -32,23 +38,58 @@ class _FtirOverviewScreenState extends State<FtirOverviewScreen> {
       _error = null;
     });
     try {
-      final datasets = await DatasetService.loadAll();
+      final datasets = await DatasetService.loadAll(_slug);
+      // Carrega contagens de amostras (para os KPIs e cards) — sem espectro,
+      // só metadados.
+      for (final ds in datasets) {
+        final samples = await SampleService.loadForDataset(_slug, ds.id);
+        ds.samples
+          ..clear()
+          ..addAll(samples);
+      }
       if (!mounted) return;
       setState(() {
         _datasets = datasets;
         _loading = false;
       });
-    } catch (e) {
+    } catch (_) {
       if (!mounted) return;
       setState(() {
-        _error = 'Erro ao carregar dados. Verifique a conexão.';
+        if (mounted) {
+          _error = AppLocalizations.of(context).homeLoadError;
+        }
         _loading = false;
       });
     }
   }
 
+  void _onMenuSelected(String value) async {
+    if (value == 'users') {
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+            builder: (_) =>
+                ManageUsersScreen(loggedUser: widget.loggedUser)),
+      );
+    } else if (value == 'institutions') {
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+            builder: (_) =>
+                ManageInstitutionsScreen(loggedUser: widget.loggedUser)),
+      );
+    } else if (value == 'logout') {
+      Navigator.of(context).pushReplacement(
+          MaterialPageRoute(builder: (_) => const LoginScreen()));
+    } else if (value.startsWith('lang:')) {
+      final code = value.split(':').last;
+      await localeService.setLocale(Locale(code));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final l = AppLocalizations.of(context);
     final allSamples = _datasets.expand((d) => d.samples).toList();
     final analyzed = allSamples.where((s) => s.result != null).toList();
     final dist = <PolymerType, int>{};
@@ -61,10 +102,9 @@ class _FtirOverviewScreenState extends State<FtirOverviewScreen> {
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
-        title: const Text('Análise FTIR',
-            style: TextStyle(fontWeight: FontWeight.bold)),
+        title: Text(l.homeTitle,
+            style: const TextStyle(fontWeight: FontWeight.bold)),
         actions: [
-          // Indicador de usuário logado
           Padding(
             padding: const EdgeInsets.only(right: 4),
             child: Row(mainAxisSize: MainAxisSize.min, children: [
@@ -75,45 +115,64 @@ class _FtirOverviewScreenState extends State<FtirOverviewScreen> {
               ),
               const SizedBox(width: 5),
               Text(widget.loggedUser.displayName,
-                  style:
-                      const TextStyle(color: Colors.greenAccent, fontSize: 12)),
+                  style: const TextStyle(
+                      color: Colors.greenAccent, fontSize: 12)),
             ]),
           ),
-          // Menu de opções
           PopupMenuButton<String>(
             icon: const Icon(Icons.more_vert),
             color: const Color(0xFF111827),
-            onSelected: (value) {
-              if (value == 'users') {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                      builder: (_) => ManageUsersScreen(
-                          loggedUser: widget.loggedUser)),
-                );
-              } else if (value == 'logout') {
-                Navigator.of(context).pushReplacement(
-                    MaterialPageRoute(builder: (_) => const LoginScreen()));
-              }
-            },
+            onSelected: _onMenuSelected,
             itemBuilder: (_) => [
               if (widget.loggedUser.isAdmin)
-                const PopupMenuItem(
+                PopupMenuItem(
                   value: 'users',
                   child: Row(children: [
-                    Icon(Icons.people_outline,
+                    const Icon(Icons.people_outline,
                         color: Colors.cyanAccent, size: 18),
-                    SizedBox(width: 10),
-                    Text('Gerenciar Usuários',
-                        style: TextStyle(color: Colors.white)),
+                    const SizedBox(width: 10),
+                    Text(l.homeMenuUsers,
+                        style: const TextStyle(color: Colors.white)),
                   ]),
                 ),
-              const PopupMenuItem(
+              if (widget.loggedUser.isAdmin)
+                PopupMenuItem(
+                  value: 'institutions',
+                  child: Row(children: [
+                    const Icon(Icons.account_balance_outlined,
+                        color: Colors.cyanAccent, size: 18),
+                    const SizedBox(width: 10),
+                    Text(l.homeMenuInstitutions,
+                        style: const TextStyle(color: Colors.white)),
+                  ]),
+                ),
+              PopupMenuItem(
+                enabled: false,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  child: Row(children: [
+                    const Icon(Icons.language,
+                        color: Colors.white38, size: 16),
+                    const SizedBox(width: 8),
+                    Text(l.homeMenuLanguage,
+                        style: const TextStyle(
+                            color: Colors.white38,
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 1)),
+                  ]),
+                ),
+              ),
+              _langItem('en', l.languageEnglish),
+              _langItem('pt', l.languagePortuguese),
+              const PopupMenuDivider(),
+              PopupMenuItem(
                 value: 'logout',
                 child: Row(children: [
-                  Icon(Icons.logout, color: Colors.white54, size: 18),
-                  SizedBox(width: 10),
-                  Text('Sair', style: TextStyle(color: Colors.white54)),
+                  const Icon(Icons.logout, color: Colors.white54, size: 18),
+                  const SizedBox(width: 10),
+                  Text(l.homeMenuLogout,
+                      style: const TextStyle(color: Colors.white54)),
                 ]),
               ),
             ],
@@ -124,8 +183,8 @@ class _FtirOverviewScreenState extends State<FtirOverviewScreen> {
         backgroundColor: Colors.cyanAccent,
         foregroundColor: Colors.black,
         icon: const Icon(Icons.create_new_folder_outlined),
-        label: const Text('Nova Coleta',
-            style: TextStyle(fontWeight: FontWeight.bold)),
+        label: Text(l.homeNewCollection,
+            style: const TextStyle(fontWeight: FontWeight.bold)),
         onPressed: () async {
           final newDataset = await Navigator.push<SpectrumDataset>(
             context,
@@ -134,7 +193,9 @@ class _FtirOverviewScreenState extends State<FtirOverviewScreen> {
                     AddDatasetScreen(loggedUser: widget.loggedUser)),
           );
           if (newDataset != null) {
-            setState(() => _datasets.insert(0, newDataset));
+            // Recarrega completo do Firebase para garantir consistência
+            // (em vez de só inserir em memória).
+            await _loadDatasets();
           }
         },
       ),
@@ -153,11 +214,10 @@ class _FtirOverviewScreenState extends State<FtirOverviewScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // KPI cards
                         Row(children: [
                           Expanded(
                               child: _KpiCard(
-                            label: 'Total de Amostras',
+                            label: l.homeKpiTotalSamples,
                             value: '${allSamples.length}',
                             icon: Icons.biotech,
                             color: Colors.cyanAccent,
@@ -165,7 +225,7 @@ class _FtirOverviewScreenState extends State<FtirOverviewScreen> {
                           const SizedBox(width: 12),
                           Expanded(
                               child: _KpiCard(
-                            label: 'Coletas',
+                            label: l.homeKpiCollections,
                             value: '${_datasets.length}',
                             icon: Icons.folder_special,
                             color: Colors.orangeAccent,
@@ -173,17 +233,15 @@ class _FtirOverviewScreenState extends State<FtirOverviewScreen> {
                           const SizedBox(width: 12),
                           Expanded(
                               child: _KpiCard(
-                            label: 'Verificadas',
+                            label: l.homeKpiVerified,
                             value: '${allSamples.where((s) => s.isVerified).length}',
                             icon: Icons.verified,
                             color: Colors.greenAccent,
                           )),
                         ]),
-
                         const SizedBox(height: 28),
-
                         if (dist.isNotEmpty) ...[
-                          _SectionTitle('Distribuição de Polímeros'),
+                          _SectionTitle(l.homePolymerDistribution),
                           const SizedBox(height: 14),
                           _GlassCard(
                             child: Column(
@@ -203,23 +261,24 @@ class _FtirOverviewScreenState extends State<FtirOverviewScreen> {
                           ),
                           const SizedBox(height: 28),
                         ],
-
-                        _SectionTitle('Coletas Registradas'),
+                        _SectionTitle(l.homeRegisteredCollections),
                         const SizedBox(height: 14),
                         if (_datasets.isEmpty)
                           _GlassCard(
                             child: Padding(
-                              padding: const EdgeInsets.symmetric(vertical: 24),
+                              padding:
+                                  const EdgeInsets.symmetric(vertical: 24),
                               child: Column(children: [
                                 Icon(Icons.folder_open_outlined,
                                     color: Colors.white.withValues(alpha: 0.2),
                                     size: 48),
                                 const SizedBox(height: 12),
                                 Text(
-                                  'Nenhuma coleta cadastrada ainda.\nToque em "Nova Coleta" para começar.',
+                                  l.homeNoCollections,
                                   textAlign: TextAlign.center,
                                   style: TextStyle(
-                                      color: Colors.white.withValues(alpha: 0.4),
+                                      color:
+                                          Colors.white.withValues(alpha: 0.4),
                                       fontSize: 13,
                                       height: 1.5),
                                 ),
@@ -234,7 +293,7 @@ class _FtirOverviewScreenState extends State<FtirOverviewScreen> {
                                   loggedUser: widget.loggedUser,
                                   onUpdate: _loadDatasets,
                                   onDelete: () async {
-                                    await DatasetService.delete(ds.id);
+                                    await DatasetService.delete(_slug, ds.id);
                                     _loadDatasets();
                                   },
                                 ),
@@ -243,6 +302,23 @@ class _FtirOverviewScreenState extends State<FtirOverviewScreen> {
                     ),
                   ),
                 ),
+    );
+  }
+
+  PopupMenuItem<String> _langItem(String code, String label) {
+    final selected = localeService.locale.languageCode == code;
+    return PopupMenuItem(
+      value: 'lang:$code',
+      child: Row(children: [
+        Icon(selected ? Icons.check_circle : Icons.circle_outlined,
+            size: 16, color: selected ? Colors.cyanAccent : Colors.white38),
+        const SizedBox(width: 10),
+        Text(label,
+            style: TextStyle(
+                color: selected ? Colors.white : Colors.white70,
+                fontWeight:
+                    selected ? FontWeight.bold : FontWeight.normal)),
+      ]),
     );
   }
 }
@@ -255,24 +331,27 @@ class _ErrorView extends StatelessWidget {
   const _ErrorView({required this.message, required this.onRetry});
 
   @override
-  Widget build(BuildContext context) => Center(
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          const Icon(Icons.cloud_off, color: Colors.white38, size: 48),
-          const SizedBox(height: 16),
-          Text(message,
-              style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.5), fontSize: 14)),
-          const SizedBox(height: 20),
-          ElevatedButton.icon(
-            style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.cyanAccent,
-                foregroundColor: Colors.black),
-            onPressed: onRetry,
-            icon: const Icon(Icons.refresh),
-            label: const Text('Tentar novamente'),
-          ),
-        ]),
-      );
+  Widget build(BuildContext context) {
+    final l = AppLocalizations.of(context);
+    return Center(
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        const Icon(Icons.cloud_off, color: Colors.white38, size: 48),
+        const SizedBox(height: 16),
+        Text(message,
+            style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.5), fontSize: 14)),
+        const SizedBox(height: 20),
+        ElevatedButton.icon(
+          style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.cyanAccent,
+              foregroundColor: Colors.black),
+          onPressed: onRetry,
+          icon: const Icon(Icons.refresh),
+          label: Text(l.homeRetry),
+        ),
+      ]),
+    );
+  }
 }
 
 class _SectionTitle extends StatelessWidget {
@@ -395,21 +474,26 @@ class _DatasetCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l = AppLocalizations.of(context);
     return Material(
       color: Colors.transparent,
       child: InkWell(
         borderRadius: BorderRadius.circular(18),
-        onTap: () => Navigator.push(
-          context,
-          MaterialPageRoute(
-              builder: (_) => DatasetDetailScreen(
-                    dataset: dataset,
-                    loggedUser: loggedUser,
-                  )),
-        ).then((_) => onUpdate()),
-        onLongPress: loggedUser.isAdmin
-            ? () => _confirmDelete(context)
-            : null,
+        onTap: () async {
+          await Navigator.push(
+            context,
+            MaterialPageRoute(
+                builder: (_) => DatasetDetailScreen(
+                      dataset: dataset,
+                      loggedUser: loggedUser,
+                    )),
+          );
+          // Recarrega ao voltar — garante que contadores e KPIs reflitam
+          // alterações (novas amostras, deletes, identificações).
+          onUpdate();
+        },
+        onLongPress:
+            loggedUser.isAdmin ? () => _confirmDelete(context, l) : null,
         child: Container(
           padding: const EdgeInsets.all(18),
           decoration: BoxDecoration(
@@ -437,7 +521,7 @@ class _DatasetCard extends StatelessWidget {
               Icon(Icons.science_outlined,
                   size: 14, color: Colors.white.withValues(alpha: 0.4)),
               const SizedBox(width: 6),
-              Text('${dataset.samples.length} amostras',
+              Text(l.datasetSamples(dataset.samples.length),
                   style: TextStyle(
                       color: Colors.white.withValues(alpha: 0.6), fontSize: 13)),
               const SizedBox(width: 16),
@@ -454,30 +538,30 @@ class _DatasetCard extends StatelessWidget {
     );
   }
 
-  void _confirmDelete(BuildContext context) {
+  void _confirmDelete(BuildContext context, AppLocalizations l) {
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
         backgroundColor: const Color(0xFF111827),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text('Remover coleta?',
-            style: TextStyle(color: Colors.white)),
+        title: Text(l.datasetRemoveTitle,
+            style: const TextStyle(color: Colors.white)),
         content: Text(
-          'A coleta "${dataset.name}" e todas as suas amostras serão removidas permanentemente.',
+          l.datasetRemoveBody(dataset.name),
           style: TextStyle(color: Colors.white.withValues(alpha: 0.65)),
         ),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(context),
-              child: const Text('Cancelar',
-                  style: TextStyle(color: Colors.white54))),
+              child: Text(l.actionCancel,
+                  style: const TextStyle(color: Colors.white54))),
           TextButton(
             onPressed: () {
               Navigator.pop(context);
               onDelete();
             },
-            child: const Text('Remover',
-                style: TextStyle(
+            child: Text(l.actionRemove,
+                style: const TextStyle(
                     color: Colors.redAccent, fontWeight: FontWeight.bold)),
           ),
         ],

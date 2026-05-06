@@ -1,5 +1,6 @@
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import '../l10n/app_localizations.dart';
 import '../models/spectrum_model.dart';
 import '../models/user_model.dart';
 import '../services/csv_import_service.dart';
@@ -27,7 +28,6 @@ class _AddSampleScreenState extends State<AddSampleScreen> {
   final _formKey = GlobalKey<FormState>();
   bool _batchMode = false;
 
-  // Campos individuais
   late final TextEditingController _siteCtrl;
   late final TextEditingController _notesCtrl;
   late DateTime _collectionDate;
@@ -40,7 +40,6 @@ class _AddSampleScreenState extends State<AddSampleScreen> {
   bool _attaching = false;
   String? _attachError;
 
-  // Batch
   late final TextEditingController _batchSiteCtrl;
   late final TextEditingController _batchCountCtrl;
   late final TextEditingController _batchNotesCtrl;
@@ -48,6 +47,7 @@ class _AddSampleScreenState extends State<AddSampleScreen> {
   bool _batchSaving = false;
 
   bool get _editing => widget.existing != null;
+  String get _slug => widget.loggedUser.institutionSlug;
 
   late final String _autoName;
 
@@ -67,7 +67,7 @@ class _AddSampleScreenState extends State<AddSampleScreen> {
     _batchNotesCtrl = TextEditingController();
     _autoName = _editing
         ? (e?.name ?? '')
-        : SampleIdGenerator.generateName(widget.dataset?.name ?? 'Amostra');
+        : SampleIdGenerator.generateName(widget.dataset?.name ?? 'Sample');
   }
 
   @override
@@ -78,6 +78,14 @@ class _AddSampleScreenState extends State<AddSampleScreen> {
     _batchCountCtrl.dispose();
     _batchNotesCtrl.dispose();
     super.dispose();
+  }
+
+  String _modeLabel(AppLocalizations l, MicroscopeMode m) {
+    switch (m) {
+      case MicroscopeMode.atr: return l.modeAtr;
+      case MicroscopeMode.transmission: return l.modeTransmission;
+      case MicroscopeMode.reflection: return l.modeReflection;
+    }
   }
 
   Future<void> _pickDate() async {
@@ -102,6 +110,7 @@ class _AddSampleScreenState extends State<AddSampleScreen> {
   }
 
   Future<void> _attachCsv() async {
+    final l = AppLocalizations.of(context);
     final picked = await FilePicker.pickFiles(
       type: FileType.custom,
       allowedExtensions: const ['csv'],
@@ -121,16 +130,13 @@ class _AddSampleScreenState extends State<AddSampleScreen> {
         picked.files.single.name,
       );
       if (results.isEmpty) {
-        setState(() => _attachError = 'CSV sem amostras válidas.');
+        setState(() => _attachError = l.addSampleAttachInvalid);
         return;
       }
-      // Sempre toma a primeira linha — modo individual = uma amostra.
       setState(() => _attachedSpectrum = results.first);
       if (results.length > 1 && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text(
-              'CSV tem ${results.length} linhas. Apenas a primeira foi usada. '
-              'Para importar todas, use o modo Lote.'),
+          content: Text(l.addSampleAttachMultiline(results.length)),
           backgroundColor: Colors.orangeAccent.withValues(alpha: 0.9),
         ));
       }
@@ -148,17 +154,18 @@ class _AddSampleScreenState extends State<AddSampleScreen> {
       });
 
   Future<void> _saveSingle() async {
+    final l = AppLocalizations.of(context);
     if (!_formKey.currentState!.validate()) return;
     setState(() => _saving = true);
 
     if (_editing) {
       final e = widget.existing!;
-      e.collectionSite = _siteCtrl.text.trim().isEmpty ? 'Não informado' : _siteCtrl.text.trim();
+      e.collectionSite = _siteCtrl.text.trim().isEmpty ? l.notInformed : _siteCtrl.text.trim();
       e.notes = _notesCtrl.text.trim();
       e.isVerified = _isVerified;
       e.verifiedBy = _isVerified ? widget.loggedUser.displayName : '';
       e.collectionDate = _collectionDate;
-      await SampleService.update(e);
+      await SampleService.update(e, _slug);
       if (!mounted) return;
       Navigator.pop(context, [e]);
       return;
@@ -170,14 +177,13 @@ class _AddSampleScreenState extends State<AddSampleScreen> {
         ? notes
         : [
             if (notes.isNotEmpty) notes,
-            'CSV anexado: $_attachedFileName (origem: ${attachment.originalCsvName})',
-            'Identificado automaticamente pelo modelo MLP.',
+            'CSV: $_attachedFileName (source: ${attachment.originalCsvName})',
           ].join('\n');
 
     final sample = SpectrumSample(
       id:             SampleIdGenerator.generateInternalId(),
       name:           _autoName,
-      collectionSite: _siteCtrl.text.trim().isEmpty ? 'Não informado' : _siteCtrl.text.trim(),
+      collectionSite: _siteCtrl.text.trim().isEmpty ? l.notInformed : _siteCtrl.text.trim(),
       collectionDate: _collectionDate,
       dataType:       _effectiveDataType,
       spectralData:   attachment?.spectralData ?? const [],
@@ -188,14 +194,18 @@ class _AddSampleScreenState extends State<AddSampleScreen> {
     );
 
     final ok = await SampleService.save(
-        sample, widget.dataset!.id, widget.loggedUser.username);
+      sample,
+      _slug,
+      widget.dataset!.id,
+      widget.loggedUser.username,
+    );
     if (!mounted) return;
 
     if (!ok) {
       setState(() => _saving = false);
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Erro ao salvar. Verifique a conexão.'),
+        SnackBar(
+          content: Text(l.addSampleSaveError),
           backgroundColor: Colors.redAccent,
         ),
       );
@@ -205,17 +215,18 @@ class _AddSampleScreenState extends State<AddSampleScreen> {
   }
 
   Future<void> _saveBatch() async {
+    final l = AppLocalizations.of(context);
     final count = int.tryParse(_batchCountCtrl.text.trim()) ?? 0;
     if (count < 1 || count > 50) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Informe um número entre 1 e 50.')),
+        SnackBar(content: Text(l.addSampleBatchInvalidCount)),
       );
       return;
     }
 
     setState(() => _batchSaving = true);
     final site = _batchSiteCtrl.text.trim().isEmpty
-        ? 'Não informado'
+        ? l.notInformed
         : _batchSiteCtrl.text.trim();
     final notes = _batchNotesCtrl.text.trim();
 
@@ -223,7 +234,7 @@ class _AddSampleScreenState extends State<AddSampleScreen> {
     for (int i = 0; i < count; i++) {
       final s = SpectrumSample(
         id: SampleIdGenerator.generateInternalId(),
-        name: SampleIdGenerator.generateName(widget.dataset?.name ?? 'Amostra'),
+        name: SampleIdGenerator.generateName(widget.dataset?.name ?? 'Sample'),
         collectionSite: site,
         collectionDate: DateTime.now(),
         dataType: _effectiveDataType,
@@ -233,7 +244,12 @@ class _AddSampleScreenState extends State<AddSampleScreen> {
         verifiedBy: _batchVerified ? widget.loggedUser.displayName : '',
       );
       samples.add(s);
-      await SampleService.save(s, widget.dataset!.id, widget.loggedUser.username);
+      await SampleService.save(
+        s,
+        _slug,
+        widget.dataset!.id,
+        widget.loggedUser.username,
+      );
     }
 
     if (!mounted) return;
@@ -259,13 +275,13 @@ class _AddSampleScreenState extends State<AddSampleScreen> {
       ),
     );
     if (imported == true && mounted) {
-      // Sinaliza para o caller que houve mudança — ele recarrega do Firebase.
       Navigator.pop(context, <SpectrumSample>[]);
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final l = AppLocalizations.of(context);
     final ds = widget.dataset;
 
     return Scaffold(
@@ -274,7 +290,7 @@ class _AddSampleScreenState extends State<AddSampleScreen> {
         backgroundColor: Colors.transparent,
         elevation: 0,
         title: Text(
-          _editing ? 'Editar Amostra' : 'Nova Amostra',
+          _editing ? l.addSampleTitleEdit : l.addSampleTitleNew,
           style: const TextStyle(fontWeight: FontWeight.bold),
         ),
       ),
@@ -283,10 +299,8 @@ class _AddSampleScreenState extends State<AddSampleScreen> {
         child: SingleChildScrollView(
           padding: const EdgeInsets.fromLTRB(20, 8, 20, 40),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-
-            // Contexto do dataset
             if (ds != null) ...[
-              _SectionLabel('COLETA'),
+              _SectionLabel(l.addSampleSectionCollection),
               const SizedBox(height: 10),
               Container(
                 width: double.infinity,
@@ -304,31 +318,34 @@ class _AddSampleScreenState extends State<AddSampleScreen> {
                           fontWeight: FontWeight.bold)),
                   const SizedBox(height: 6),
                   Wrap(spacing: 14, runSpacing: 4, children: [
-                    _InfoChip(Icons.biotech_outlined, ds.microscopeMode.label),
+                    _InfoChip(Icons.biotech_outlined, _modeLabel(l, ds.microscopeMode)),
                     _InfoChip(Icons.memory_outlined, ds.detectorType),
-                    _InfoChip(Icons.tune, '${ds.resolution.toInt()} cm⁻¹ · ${ds.numScans} scans'),
+                    _InfoChip(Icons.tune,
+                        '${ds.resolution.toInt()} cm⁻¹ · ${ds.numScans} scans'),
                     if (ds.crystalType != '—')
                       _InfoChip(Icons.diamond_outlined, ds.crystalType),
-                    _InfoChip(Icons.show_chart,
-                        ds.dataType == DataType.absorbance ? 'Absorbância' : 'Transmitância'),
+                    _InfoChip(
+                        Icons.show_chart,
+                        ds.dataType == DataType.absorbance
+                            ? l.dataAbsorbance
+                            : l.dataTransmittance),
                   ]),
                 ]),
               ),
               const SizedBox(height: 20),
             ],
 
-            // Toggle modo (só na criação)
             if (!_editing) ...[
               Row(children: [
                 _ModeChip(
-                  label: 'Amostra individual',
+                  label: l.addSampleModeIndividual,
                   icon: Icons.science_outlined,
                   selected: !_batchMode,
                   onTap: () => setState(() => _batchMode = false),
                 ),
                 const SizedBox(width: 10),
                 _ModeChip(
-                  label: 'Lote de amostras',
+                  label: l.addSampleModeBatch,
                   icon: Icons.layers_outlined,
                   selected: _batchMode,
                   onTap: () => setState(() => _batchMode = true),
@@ -337,9 +354,8 @@ class _AddSampleScreenState extends State<AddSampleScreen> {
               const SizedBox(height: 24),
             ],
 
-            // ── MODO INDIVIDUAL ────────────────────────────────────────────
             if (!_batchMode) ...[
-              _SectionLabel('IDENTIFICAÇÃO'),
+              _SectionLabel(l.addSampleSectionId),
               const SizedBox(height: 10),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -352,9 +368,10 @@ class _AddSampleScreenState extends State<AddSampleScreen> {
                   Icon(Icons.tag, size: 16, color: Colors.cyanAccent.withValues(alpha: 0.7)),
                   const SizedBox(width: 10),
                   Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Text('ID da Amostra',
+                    Text(l.addSampleIdLabel,
                         style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.4), fontSize: 11)),
+                            color: Colors.white.withValues(alpha: 0.4),
+                            fontSize: 11)),
                     const SizedBox(height: 2),
                     Text(_autoName,
                         style: const TextStyle(
@@ -370,18 +387,18 @@ class _AddSampleScreenState extends State<AddSampleScreen> {
                       color: Colors.cyanAccent.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(8),
                     ),
-                    child: Text('Aleatório',
+                    child: Text(l.addSampleIdRandom,
                         style: TextStyle(
-                            color: Colors.cyanAccent.withValues(alpha: 0.7), fontSize: 10)),
+                            color: Colors.cyanAccent.withValues(alpha: 0.7),
+                            fontSize: 10)),
                   ),
                 ]),
               ),
               const SizedBox(height: 14),
-              _Field('Local de Coleta', _siteCtrl, hint: 'Ex: Ponto 4 — Orla Norte'),
+              _Field(l.addSampleSiteLabel, _siteCtrl, hint: l.addSampleSiteHint),
               const SizedBox(height: 14),
 
-              // Date picker
-              _SectionLabel('DATA DE COLETA'),
+              _SectionLabel(l.addSampleSectionDate),
               const SizedBox(height: 10),
               GestureDetector(
                 onTap: _pickDate,
@@ -399,16 +416,17 @@ class _AddSampleScreenState extends State<AddSampleScreen> {
                     Text(_fmtDate(_collectionDate),
                         style: const TextStyle(color: Colors.white, fontSize: 14)),
                     const Spacer(),
-                    Text('Alterar',
+                    Text(l.addSampleChangeDate,
                         style: TextStyle(
-                            color: Colors.cyanAccent.withValues(alpha: 0.6), fontSize: 13)),
+                            color: Colors.cyanAccent.withValues(alpha: 0.6),
+                            fontSize: 13)),
                   ]),
                 ),
               ),
               const SizedBox(height: 20),
 
               if (!_editing) ...[
-                _SectionLabel('DADOS ESPECTRAIS (OPCIONAL)'),
+                _SectionLabel(l.addSampleSectionSpectral),
                 const SizedBox(height: 10),
                 _AttachmentBox(
                   fileName: _attachedFileName,
@@ -421,14 +439,14 @@ class _AddSampleScreenState extends State<AddSampleScreen> {
                 const SizedBox(height: 20),
               ],
 
-              _SectionLabel('OBSERVAÇÕES'),
+              _SectionLabel(l.addSampleSectionNotes),
               const SizedBox(height: 10),
-              _Field('Anotações', _notesCtrl,
-                  hint: 'Morfologia, cor, tamanho, condições de coleta…',
-                  maxLines: 3),
+              _Field(l.addSampleNotesLabel, _notesCtrl,
+                  hint: l.addSampleNotesHint, maxLines: 3),
               const SizedBox(height: 24),
 
-              _buildVerificationSection(_isVerified, (v) => setState(() => _isVerified = v)),
+              _buildVerificationSection(
+                  l, _isVerified, (v) => setState(() => _isVerified = v)),
               const SizedBox(height: 32),
 
               SizedBox(
@@ -438,23 +456,28 @@ class _AddSampleScreenState extends State<AddSampleScreen> {
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.cyanAccent,
                     foregroundColor: Colors.black,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14)),
                     elevation: 0,
                   ),
                   onPressed: _saving ? null : _saveSingle,
                   child: _saving
                       ? const SizedBox(
                           width: 20, height: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black))
+                          child: CircularProgressIndicator(
+                              strokeWidth: 2, color: Colors.black))
                       : Text(
-                          _editing ? 'SALVAR ALTERAÇÕES' : 'CADASTRAR AMOSTRA',
+                          _editing
+                              ? l.addSampleSaveBtnEdit
+                              : l.addSampleSaveBtn,
                           style: const TextStyle(
-                              fontSize: 14, fontWeight: FontWeight.bold, letterSpacing: 0.8)),
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                              letterSpacing: 0.8)),
                 ),
               ),
             ],
 
-            // ── MODO LOTE ──────────────────────────────────────────────────
             if (_batchMode) ...[
               Container(
                 margin: const EdgeInsets.only(bottom: 20),
@@ -469,36 +492,35 @@ class _AddSampleScreenState extends State<AddSampleScreen> {
                       size: 15, color: Colors.blueAccent.withValues(alpha: 0.8)),
                   const SizedBox(width: 8),
                   Expanded(child: Text(
-                    'Cadastra múltiplas amostras com IDs aleatórios para um '
-                    'mesmo ponto de coleta. Use "Importar de CSV" para criar '
-                    'um lote já com dados espectrais e identificação.',
+                    l.addSampleBatchInfo,
                     style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.55), fontSize: 12, height: 1.4),
+                        color: Colors.white.withValues(alpha: 0.55),
+                        fontSize: 12, height: 1.4),
                   )),
                 ]),
               ),
 
-              _SectionLabel('NÚMERO DE AMOSTRAS'),
+              _SectionLabel(l.addSampleBatchSectionCount),
               const SizedBox(height: 10),
-              _Field('Quantidade', _batchCountCtrl,
-                  hint: 'Ex: 5',
+              _Field(l.addSampleBatchCount, _batchCountCtrl,
+                  hint: l.addSampleBatchCountHint,
                   keyboardType: TextInputType.number),
               const SizedBox(height: 14),
 
-              _SectionLabel('LOCAL DE COLETA'),
+              _SectionLabel(l.addSampleBatchSiteHint),
               const SizedBox(height: 10),
-              _Field('Local compartilhado', _batchSiteCtrl,
-                  hint: 'Ex: Praia do Futuro — Transecto 2'),
+              _Field(l.addSampleBatchSiteLabel, _batchSiteCtrl,
+                  hint: l.addSampleBatchSiteHint),
               const SizedBox(height: 14),
 
-              _SectionLabel('OBSERVAÇÕES'),
+              _SectionLabel(l.addSampleSectionNotes),
               const SizedBox(height: 10),
-              _Field('Anotações (compartilhadas)', _batchNotesCtrl,
-                  hint: 'Condições gerais da coleta…', maxLines: 2),
+              _Field(l.addSampleBatchNotesLabel, _batchNotesCtrl,
+                  hint: l.addSampleBatchNotesHint, maxLines: 2),
               const SizedBox(height: 20),
 
               _buildVerificationSection(
-                  _batchVerified, (v) => setState(() => _batchVerified = v)),
+                  l, _batchVerified, (v) => setState(() => _batchVerified = v)),
               const SizedBox(height: 28),
 
               SizedBox(
@@ -508,17 +530,21 @@ class _AddSampleScreenState extends State<AddSampleScreen> {
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.cyanAccent,
                     foregroundColor: Colors.black,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14)),
                     elevation: 0,
                   ),
                   onPressed: _batchSaving ? null : _saveBatch,
                   child: _batchSaving
                       ? const SizedBox(
                           width: 20, height: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black))
-                      : const Text('CADASTRAR LOTE (IDs ALEATÓRIOS)',
-                          style: TextStyle(
-                              fontSize: 13, fontWeight: FontWeight.bold, letterSpacing: 0.8)),
+                          child: CircularProgressIndicator(
+                              strokeWidth: 2, color: Colors.black))
+                      : Text(l.addSampleBatchSaveBtn,
+                          style: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.bold,
+                              letterSpacing: 0.8)),
                 ),
               ),
               const SizedBox(height: 12),
@@ -529,13 +555,16 @@ class _AddSampleScreenState extends State<AddSampleScreen> {
                   style: OutlinedButton.styleFrom(
                     foregroundColor: Colors.cyanAccent,
                     side: BorderSide(color: Colors.cyanAccent.withValues(alpha: 0.5)),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14)),
                   ),
                   onPressed: _batchSaving ? null : _importBatchFromCsv,
                   icon: const Icon(Icons.upload_file_outlined, size: 18),
-                  label: const Text('IMPORTAR LOTE A PARTIR DE CSV',
-                      style: TextStyle(
-                          fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 0.8)),
+                  label: Text(l.addSampleBatchImportCsv,
+                      style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 0.8)),
                 ),
               ),
             ],
@@ -545,9 +574,10 @@ class _AddSampleScreenState extends State<AddSampleScreen> {
     );
   }
 
-  Widget _buildVerificationSection(bool verified, void Function(bool) onToggle) {
+  Widget _buildVerificationSection(
+      AppLocalizations l, bool verified, void Function(bool) onToggle) {
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      _SectionLabel('VERIFICAÇÃO DO ANOTADOR'),
+      _SectionLabel(l.addSampleSectionVerification),
       const SizedBox(height: 12),
       InkWell(
         borderRadius: BorderRadius.circular(14),
@@ -576,7 +606,7 @@ class _AddSampleScreenState extends State<AddSampleScreen> {
             const SizedBox(width: 12),
             Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text(
-                'Amostra verificada pelo anotador',
+                l.addSampleVerifiedToggle,
                 style: TextStyle(
                   color: verified ? Colors.greenAccent : Colors.white70,
                   fontSize: 14,
@@ -605,8 +635,6 @@ class _AddSampleScreenState extends State<AddSampleScreen> {
   String _fmtDate(DateTime d) =>
       '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
 }
-
-// ── Widgets ───────────────────────────────────────────────────────────────────
 
 class _SectionLabel extends StatelessWidget {
   final String text;
@@ -735,6 +763,7 @@ class _AttachmentBox extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l = AppLocalizations.of(context);
     if (loading) {
       return Container(
         padding: const EdgeInsets.all(14),
@@ -750,7 +779,9 @@ class _AttachmentBox extends StatelessWidget {
           ),
           const SizedBox(width: 12),
           Expanded(child: Text(
-            fileName == null ? 'Identificando…' : 'Identificando $fileName…',
+            fileName == null
+                ? l.addSampleAttachLoading
+                : l.addSampleAttachLoadingFile(fileName!),
             style: TextStyle(color: Colors.white.withValues(alpha: 0.7), fontSize: 13),
           )),
         ]),
@@ -772,13 +803,13 @@ class _AttachmentBox extends StatelessWidget {
             Icon(Icons.check_circle_outline, color: color, size: 18),
             const SizedBox(width: 8),
             Expanded(child: Text(
-              fileName ?? 'CSV anexado',
+              fileName ?? '—',
               style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600),
               overflow: TextOverflow.ellipsis,
             )),
             IconButton(
               icon: Icon(Icons.close, size: 16, color: Colors.white.withValues(alpha: 0.5)),
-              tooltip: 'Remover anexo',
+              tooltip: l.addSampleAttachRemoveTooltip,
               onPressed: onClear,
             ),
           ]),
@@ -794,9 +825,12 @@ class _AttachmentBox extends StatelessWidget {
               child: Text(id.polymer.label,
                   style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.bold)),
             ),
-            Text('${(id.confidence * 100).toStringAsFixed(1)}% conf.',
-                style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.bold)),
-            Text('${result!.spectralData.length} pontos',
+            Text(
+              l.addSampleAttachConfidenceShort(
+                  (id.confidence * 100).toStringAsFixed(1)),
+              style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.bold),
+            ),
+            Text(l.addSampleAttachPoints(result!.spectralData.length),
                 style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 12)),
           ]),
         ]),
@@ -813,8 +847,8 @@ class _AttachmentBox extends StatelessWidget {
         ),
         onPressed: onPick,
         icon: const Icon(Icons.upload_file_outlined, size: 18),
-        label: const Text('Anexar dados espectrais (CSV, 1 linha)',
-            style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+        label: Text(l.addSampleAttachCsv,
+            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
       ),
       if (error != null) ...[
         const SizedBox(height: 8),
@@ -823,8 +857,7 @@ class _AttachmentBox extends StatelessWidget {
       ] else ...[
         const SizedBox(height: 6),
         Text(
-          'O CSV é enviado ao modelo MLP para identificação automática. '
-          'Os dados ficam vinculados ao ID aleatório desta amostra.',
+          l.addSampleAttachHelp,
           style: TextStyle(color: Colors.white.withValues(alpha: 0.4), fontSize: 11, height: 1.4),
         ),
       ],

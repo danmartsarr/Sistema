@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../l10n/app_localizations.dart';
 import '../models/spectrum_model.dart';
 import '../models/user_model.dart';
 import '../services/dataset_service.dart';
@@ -37,7 +38,16 @@ class _AddDatasetScreenState extends State<AddDatasetScreen> {
     super.dispose();
   }
 
+  String _modeLabel(AppLocalizations l, MicroscopeMode m) {
+    switch (m) {
+      case MicroscopeMode.atr: return l.modeAtr;
+      case MicroscopeMode.transmission: return l.modeTransmission;
+      case MicroscopeMode.reflection: return l.modeReflection;
+    }
+  }
+
   Future<void> _save() async {
+    final l = AppLocalizations.of(context);
     if (!_formKey.currentState!.validate()) return;
     setState(() => _saving = true);
 
@@ -45,14 +55,14 @@ class _AddDatasetScreenState extends State<AddDatasetScreen> {
       id:            '',
       name:          _nameCtrl.text.trim(),
       description:   _descCtrl.text.trim().isEmpty
-                         ? 'Sem descrição.'
+                         ? l.noDescription
                          : _descCtrl.text.trim(),
       location:      _locationCtrl.text.trim(),
       createdAt:     DateTime.now(),
       samples:       [],
       microscopeMode:  _mode,
       microscopeModel: _modelCtrl.text.trim().isEmpty
-                         ? 'Não informado'
+                         ? l.notInformed
                          : _modelCtrl.text.trim(),
       resolution:    double.tryParse(_resCtrl.text) ?? 4,
       numScans:      int.tryParse(_scansCtrl.text) ?? 64,
@@ -61,21 +71,24 @@ class _AddDatasetScreenState extends State<AddDatasetScreen> {
       dataType:      _dataType,
     );
 
-    final id = await DatasetService.save(dataset, widget.loggedUser.username);
+    final id = await DatasetService.save(
+      dataset,
+      widget.loggedUser.institutionSlug,
+      widget.loggedUser.username,
+    );
     if (!mounted) return;
 
     if (id == null) {
       setState(() => _saving = false);
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Erro ao salvar. Verifique a conexão.'),
+        SnackBar(
+          content: Text(l.addDatasetSaveError),
           backgroundColor: Colors.redAccent,
         ),
       );
       return;
     }
 
-    // Return the saved dataset with the real Firebase ID
     final saved = SpectrumDataset(
       id:            id,
       name:          dataset.name,
@@ -96,13 +109,14 @@ class _AddDatasetScreenState extends State<AddDatasetScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l = AppLocalizations.of(context);
     return Scaffold(
       backgroundColor: const Color(0xFF0A0E21),
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
-        title: const Text('Nova Coleta',
-            style: TextStyle(fontWeight: FontWeight.bold)),
+        title: Text(l.addDatasetTitle,
+            style: const TextStyle(fontWeight: FontWeight.bold)),
       ),
       body: Form(
         key: _formKey,
@@ -110,22 +124,22 @@ class _AddDatasetScreenState extends State<AddDatasetScreen> {
           padding: const EdgeInsets.fromLTRB(20, 8, 20, 40),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
 
-            _SectionLabel('IDENTIFICAÇÃO'),
+            _SectionLabel(l.addDatasetSectionId),
             const SizedBox(height: 14),
-            _Field('Nome da Coleta', _nameCtrl,
-              hint: 'Ex: Praia do Futuro — Abr/2024',
-              validator: (v) => (v == null || v.trim().isEmpty) ? 'Campo obrigatório' : null),
+            _Field(l.addDatasetName, _nameCtrl,
+              hint: l.addDatasetNameHint,
+              validator: (v) => (v == null || v.trim().isEmpty)
+                  ? l.addDatasetRequired : null),
             const SizedBox(height: 14),
-            _Field('Descrição', _descCtrl,
-              hint: 'Ex: Sedimento superficial em 5 pontos amostrais',
-              maxLines: 2),
+            _Field(l.addDatasetDescription, _descCtrl,
+              hint: l.addDatasetDescriptionHint, maxLines: 2),
             const SizedBox(height: 14),
-            _Field('Localização', _locationCtrl,
-              hint: 'Ex: Fortaleza, CE'),
+            _Field(l.addDatasetLocation, _locationCtrl,
+              hint: l.addDatasetLocationHint),
 
             const SizedBox(height: 28),
 
-            _SectionLabel('EQUIPAMENTO E CALIBRAÇÃO'),
+            _SectionLabel(l.addDatasetSectionEquipment),
             const SizedBox(height: 6),
             Container(
               margin: const EdgeInsets.only(bottom: 16),
@@ -139,19 +153,19 @@ class _AddDatasetScreenState extends State<AddDatasetScreen> {
                 Icon(Icons.info_outline, size: 15, color: Colors.cyanAccent.withValues(alpha: 0.7)),
                 const SizedBox(width: 8),
                 Expanded(child: Text(
-                  'Parâmetros compartilhados por todas as amostras desta coleta.',
+                  l.addDatasetEquipmentNote,
                   style: TextStyle(color: Colors.white.withValues(alpha: 0.55), fontSize: 12, height: 1.4),
                 )),
               ]),
             ),
-            _Field('Modelo do Espectrômetro', _modelCtrl,
-              hint: 'Ex: Bruker Vertex 70 + Hyperion 3000'),
+            _Field(l.addDatasetSpectrometerModel, _modelCtrl,
+              hint: l.addDatasetSpectrometerHint),
             const SizedBox(height: 14),
 
-            _Label('Modo de Aquisição'),
+            _Label(l.addDatasetAcquisitionMode),
             const SizedBox(height: 8),
             Wrap(spacing: 8, children: MicroscopeMode.values.map((m) => _ChoiceChip(
-              label: m.label,
+              label: _modeLabel(l, m),
               selected: _mode == m,
               onTap: () => setState(() => _mode = m),
             )).toList()),
@@ -159,7 +173,7 @@ class _AddDatasetScreenState extends State<AddDatasetScreen> {
             const SizedBox(height: 14),
 
             if (_mode == MicroscopeMode.atr) ...[
-              _Label('Cristal ATR'),
+              _Label(l.addDatasetAtrCrystal),
               const SizedBox(height: 8),
               Wrap(spacing: 8, children: _crystals.map((c) => _ChoiceChip(
                 label: c,
@@ -169,7 +183,7 @@ class _AddDatasetScreenState extends State<AddDatasetScreen> {
               const SizedBox(height: 14),
             ],
 
-            _Label('Detector'),
+            _Label(l.addDatasetDetector),
             const SizedBox(height: 8),
             Wrap(spacing: 8, children: _detectors.map((d) => _ChoiceChip(
               label: d,
@@ -179,25 +193,25 @@ class _AddDatasetScreenState extends State<AddDatasetScreen> {
 
             const SizedBox(height: 14),
             Row(children: [
-              Expanded(child: _Field('Resolução (cm⁻¹)', _resCtrl,
+              Expanded(child: _Field(l.addDatasetResolution, _resCtrl,
                 hint: '4', keyboardType: TextInputType.number)),
               const SizedBox(width: 14),
-              Expanded(child: _Field('Nº de Scans', _scansCtrl,
+              Expanded(child: _Field(l.addDatasetScans, _scansCtrl,
                 hint: '64', keyboardType: TextInputType.number)),
             ]),
 
             const SizedBox(height: 24),
 
-            _SectionLabel('TIPO DE DADO PADRÃO'),
+            _SectionLabel(l.addDatasetSectionDataType),
             const SizedBox(height: 8),
             Wrap(spacing: 10, children: [
               _ChoiceChip(
-                label: 'Absorbância',
+                label: l.dataAbsorbance,
                 selected: _dataType == DataType.absorbance,
                 onTap: () => setState(() => _dataType = DataType.absorbance),
               ),
               _ChoiceChip(
-                label: 'Transmitância',
+                label: l.dataTransmittance,
                 selected: _dataType == DataType.transmittance,
                 onTap: () => setState(() => _dataType = DataType.transmittance),
               ),
@@ -220,8 +234,8 @@ class _AddDatasetScreenState extends State<AddDatasetScreen> {
                     ? const SizedBox(
                         width: 20, height: 20,
                         child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black))
-                    : const Text('SALVAR COLETA',
-                        style: TextStyle(
+                    : Text(l.addDatasetSave,
+                        style: const TextStyle(
                           color: Colors.black, fontSize: 14,
                           fontWeight: FontWeight.bold, letterSpacing: 0.8)),
               ),
@@ -232,8 +246,6 @@ class _AddDatasetScreenState extends State<AddDatasetScreen> {
     );
   }
 }
-
-// ── Widgets locais ────────────────────────────────────────────────────────────
 
 class _SectionLabel extends StatelessWidget {
   final String text;

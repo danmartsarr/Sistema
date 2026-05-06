@@ -1,5 +1,6 @@
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
+import '../l10n/app_localizations.dart';
 import '../models/spectrum_model.dart';
 
 // ── Constants ────────────────────────────────────────────────────────────────
@@ -92,7 +93,7 @@ class _FtirPainter extends CustomPainter {
     }
 
     _drawText(
-      canvas, 'Número de Onda (cm⁻¹)',
+      canvas, 'Wavenumber (cm⁻¹)',
       Offset(_leftPad + chartW / 2, size.height - 6),
       TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 11),
       center: true,
@@ -288,9 +289,12 @@ class _FtirChartState extends State<FtirChart> {
 
   @override
   Widget build(BuildContext context) {
+    final l = AppLocalizations.of(context);
     final sample = widget.sample;
     final color  = sample.result?.polymer.color ?? Colors.cyanAccent;
-    final yLabel = _showTransmittance ? 'Transmitância (%)' : 'Absorbância (u.a.)';
+    final yLabel = _showTransmittance
+        ? '${l.chartTransmittance} (%)'
+        : '${l.chartAbsorbance} (a.u.)';
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -300,13 +304,13 @@ class _FtirChartState extends State<FtirChart> {
           mainAxisAlignment: MainAxisAlignment.end,
           children: [
             _ChipToggle(
-              label: 'Absorbância',
+              label: l.chartAbsorbance,
               active: !_showTransmittance,
               onTap: () => setState(() => _showTransmittance = false),
             ),
             const SizedBox(width: 8),
             _ChipToggle(
-              label: 'Transmitância',
+              label: l.chartTransmittance,
               active: _showTransmittance,
               onTap: () => setState(() => _showTransmittance = true),
             ),
@@ -319,10 +323,11 @@ class _FtirChartState extends State<FtirChart> {
                   borderRadius: BorderRadius.circular(20),
                   border: Border.all(color: const Color(0xFFFF6D00).withValues(alpha: 0.4)),
                 ),
-                child: const Row(children: [
-                  Icon(Icons.blur_on, size: 12, color: Color(0xFFFF6D00)),
-                  SizedBox(width: 4),
-                  Text('Atenção', style: TextStyle(color: Color(0xFFFF6D00), fontSize: 11)),
+                child: Row(children: [
+                  const Icon(Icons.blur_on, size: 12, color: Color(0xFFFF6D00)),
+                  const SizedBox(width: 4),
+                  Text(l.chartAttention,
+                      style: const TextStyle(color: Color(0xFFFF6D00), fontSize: 11)),
                 ]),
               ),
             ],
@@ -360,7 +365,7 @@ class _FtirChartState extends State<FtirChart> {
               Container(width: 12, height: 3,
                 color: Colors.amber.withValues(alpha: 0.8)),
               const SizedBox(width: 6),
-              Text('Ponto de decisão',
+              Text(l.chartLegendDecision,
                 style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 11)),
               const SizedBox(width: 16),
               Container(
@@ -371,7 +376,7 @@ class _FtirChartState extends State<FtirChart> {
                 ),
               ),
               const SizedBox(width: 6),
-              Text('Região de atenção',
+              Text(l.chartLegendAttention,
                 style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 11)),
             ]),
           ),
