@@ -85,14 +85,13 @@ class IdentificationResult {
   });
 }
 
-// ── Sample: apenas dados da amostra individual ────────────────────────────────
 // Parâmetros de calibração/equipamento ficam no SpectrumDataset.
 class SpectrumSample {
   final String id;
   String name;
   String collectionSite;
   DateTime collectionDate;
-  DataType dataType; // tipo do dado espectral (necessário para conversão)
+  DataType dataType; 
   List<SpectralPoint> spectralData;
   IdentificationResult? result;
   String notes;
@@ -127,7 +126,6 @@ class SpectrumSample {
   }
 }
 
-// ── Dataset: inclui parâmetros de calibração compartilhados por todas as amostras ──
 class SpectrumDataset {
   final String id;
   String name;
@@ -136,7 +134,6 @@ class SpectrumDataset {
   DateTime createdAt;
   List<SpectrumSample> samples;
 
-  // Parâmetros de calibração/instrumento (compartilhados por todas as amostras)
   MicroscopeMode microscopeMode;
   String microscopeModel;
   double resolution;

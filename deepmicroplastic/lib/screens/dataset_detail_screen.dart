@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../l10n/app_localizations.dart';
 import '../models/spectrum_model.dart';
 import '../models/user_model.dart';
 import '../services/sample_service.dart';
@@ -9,16 +10,19 @@ import 'add_sample_screen.dart';
 class DatasetDetailScreen extends StatefulWidget {
   final SpectrumDataset dataset;
   final UserModel loggedUser;
-  const DatasetDetailScreen({super.key, required this.dataset, required this.loggedUser});
+  const DatasetDetailScreen(
+      {super.key, required this.dataset, required this.loggedUser});
 
   @override
   State<DatasetDetailScreen> createState() => _DatasetDetailScreenState();
 }
 
 class _DatasetDetailScreenState extends State<DatasetDetailScreen> {
-  String _filter = 'Todos';
+  String _filter = '__all__';
   bool _loading = true;
   late final SpectrumDataset _dataset;
+
+  String get _slug => widget.loggedUser.institutionSlug;
 
   @override
   void initState() {
@@ -29,7 +33,7 @@ class _DatasetDetailScreenState extends State<DatasetDetailScreen> {
 
   Future<void> _loadSamples() async {
     setState(() => _loading = true);
-    final samples = await SampleService.loadForDataset(_dataset.id);
+    final samples = await SampleService.loadForDataset(_slug, _dataset.id);
     if (!mounted) return;
     setState(() {
       _dataset.samples
@@ -39,16 +43,28 @@ class _DatasetDetailScreenState extends State<DatasetDetailScreen> {
     });
   }
 
-  List<String> get _filterLabels => ['Todos', 'PE', 'PP', 'PET', 'PS', 'Desconhecido', 'Pendente'];
-
   List<SpectrumSample> get _filtered {
-    if (_filter == 'Todos') return _dataset.samples;
-    if (_filter == 'Pendente') return _dataset.samples.where((s) => s.result == null).toList();
-    return _dataset.samples.where((s) => s.result?.polymer.label == _filter).toList();
+    if (_filter == '__all__') return _dataset.samples;
+    if (_filter == '__pending__') {
+      return _dataset.samples.where((s) => s.result == null).toList();
+    }
+    return _dataset.samples
+        .where((s) => s.result?.polymer.label == _filter)
+        .toList();
   }
 
   @override
   Widget build(BuildContext context) {
+    final l = AppLocalizations.of(context);
+    final filterLabels = <(String, String)>[
+      ('__all__', l.datasetDetailFilterAll),
+      ('PE', 'PE'),
+      ('PP', 'PP'),
+      ('PET', 'PET'),
+      ('PS', 'PS'),
+      ('Desconhecido', 'Unknown'),
+      ('__pending__', l.datasetDetailFilterPending),
+    ];
     return Scaffold(
       backgroundColor: const Color(0xFF0A0E21),
       appBar: AppBar(
@@ -58,8 +74,9 @@ class _DatasetDetailScreenState extends State<DatasetDetailScreen> {
             style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
         actions: [
           IconButton(
-            icon: const Icon(Icons.upload_file_outlined, color: Colors.cyanAccent),
-            tooltip: 'Importar CSV',
+            icon: const Icon(Icons.upload_file_outlined,
+                color: Colors.cyanAccent),
+            tooltip: l.datasetDetailUploadCsvTooltip,
             onPressed: () async {
               final imported = await Navigator.push<bool>(
                 context,
@@ -70,7 +87,7 @@ class _DatasetDetailScreenState extends State<DatasetDetailScreen> {
                   ),
                 ),
               );
-              if (imported == true) setState(() {});
+              if (imported == true) await _loadSamples();
             },
           ),
         ],
@@ -79,42 +96,36 @@ class _DatasetDetailScreenState extends State<DatasetDetailScreen> {
         backgroundColor: Colors.cyanAccent,
         foregroundColor: Colors.black,
         icon: const Icon(Icons.add),
-        label: const Text('Nova Amostra', style: TextStyle(fontWeight: FontWeight.bold)),
+        label: Text(l.datasetDetailNewSample,
+            style: const TextStyle(fontWeight: FontWeight.bold)),
         onPressed: () async {
           final newSamples = await Navigator.push<List<SpectrumSample>>(
             context,
-            MaterialPageRoute(builder: (_) => AddSampleScreen(
-              dataset: _dataset,
-              loggedUser: widget.loggedUser,
-            )),
+            MaterialPageRoute(
+                builder: (_) => AddSampleScreen(
+                      dataset: _dataset,
+                      loggedUser: widget.loggedUser,
+                    )),
           );
           if (newSamples == null) return;
-          if (newSamples.isEmpty) {
-            // Lista vazia = import por CSV no modo lote: amostras já salvas no
-            // Firebase mas não retornadas em memória. Recarrega tudo.
-            await _loadSamples();
-          } else {
-            setState(() => _dataset.samples.addAll(newSamples));
-          }
+          await _loadSamples();
         },
       ),
       body: Column(
         children: [
           _DatasetHeader(dataset: _dataset),
-
-          // Filter chips
           SizedBox(
             height: 44,
             child: ListView.separated(
               padding: const EdgeInsets.symmetric(horizontal: 20),
               scrollDirection: Axis.horizontal,
-              itemCount: _filterLabels.length,
-              separatorBuilder: (_, __) => const SizedBox(width: 8),
+              itemCount: filterLabels.length,
+              separatorBuilder: (_, _) => const SizedBox(width: 8),
               itemBuilder: (_, i) {
-                final label = _filterLabels[i];
-                final active = _filter == label;
+                final (key, label) = filterLabels[i];
+                final active = _filter == key;
                 return GestureDetector(
-                  onTap: () => setState(() => _filter = label),
+                  onTap: () => setState(() => _filter = key),
                   child: AnimatedContainer(
                     duration: const Duration(milliseconds: 160),
                     padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
@@ -133,44 +144,42 @@ class _DatasetDetailScreenState extends State<DatasetDetailScreen> {
                         style: TextStyle(
                           color: active ? Colors.cyanAccent : Colors.white54,
                           fontSize: 13,
-                          fontWeight: active ? FontWeight.bold : FontWeight.normal,
+                          fontWeight:
+                              active ? FontWeight.bold : FontWeight.normal,
                         )),
                   ),
                 );
               },
             ),
           ),
-
           const SizedBox(height: 12),
-
-          // Table header
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 20),
             child: Row(children: [
-              Expanded(flex: 3, child: _ColHeader('Amostra')),
-              Expanded(flex: 2, child: _ColHeader('Local')),
-              Expanded(flex: 2, child: _ColHeader('Polímero')),
-              Expanded(flex: 2, child: _ColHeader('Confiança')),
+              Expanded(flex: 3, child: _ColHeader(l.datasetDetailColSample)),
+              Expanded(flex: 2, child: _ColHeader(l.datasetDetailColLocation)),
+              Expanded(flex: 2, child: _ColHeader(l.datasetDetailColPolymer)),
+              Expanded(flex: 2, child: _ColHeader(l.datasetDetailColConfidence)),
             ]),
           ),
           const SizedBox(height: 6),
           Divider(color: Colors.white.withValues(alpha: 0.08), height: 1),
-
-          // Sample list
           Expanded(
             child: _loading
                 ? const Center(
-                    child: CircularProgressIndicator(color: Colors.cyanAccent))
+                    child:
+                        CircularProgressIndicator(color: Colors.cyanAccent))
                 : _filtered.isEmpty
                     ? Center(
                         child: Column(mainAxisSize: MainAxisSize.min, children: [
                           Icon(Icons.science_outlined,
-                              color: Colors.white.withValues(alpha: 0.2), size: 40),
+                              color: Colors.white.withValues(alpha: 0.2),
+                              size: 40),
                           const SizedBox(height: 12),
                           Text(
                             _dataset.samples.isEmpty
-                                ? 'Nenhuma amostra cadastrada.\nToque em "Nova Amostra" para começar.'
-                                : 'Nenhuma amostra para este filtro.',
+                                ? l.datasetDetailEmpty
+                                : l.datasetDetailEmptyFiltered,
                             textAlign: TextAlign.center,
                             style: TextStyle(
                                 color: Colors.white.withValues(alpha: 0.4),
@@ -186,7 +195,7 @@ class _DatasetDetailScreenState extends State<DatasetDetailScreen> {
                         child: ListView.separated(
                           padding: const EdgeInsets.only(bottom: 100),
                           itemCount: _filtered.length,
-                          separatorBuilder: (_, __) => Divider(
+                          separatorBuilder: (_, _) => Divider(
                             color: Colors.white.withValues(alpha: 0.05),
                             height: 1,
                             indent: 20,
@@ -201,17 +210,21 @@ class _DatasetDetailScreenState extends State<DatasetDetailScreen> {
                                   sample: _filtered[i],
                                   dataset: _dataset,
                                   loggedUser: widget.loggedUser,
-                                  onDelete: () {
-                                    SampleService.delete(
+                                  onDelete: () async {
+                                    await SampleService.delete(
+                                      _slug,
+                                      _dataset.id,
                                       _filtered[i].id,
-                                      datasetId: _dataset.id,
                                     );
-                                    setState(() => _dataset.samples.remove(_filtered[i]));
-                                    Navigator.pop(context);
+                                    setState(() => _dataset.samples
+                                        .remove(_filtered[i]));
+                                    if (mounted) Navigator.pop(context);
                                   },
                                 ),
                               ),
-                            ).then((_) => setState(() {})),
+                            ).then((_) async {
+                              await _loadSamples();
+                            }),
                           ),
                         ),
                       ),
@@ -222,13 +235,13 @@ class _DatasetDetailScreenState extends State<DatasetDetailScreen> {
   }
 }
 
-// ── Dataset header ────────────────────────────────────────────────────────────
 class _DatasetHeader extends StatelessWidget {
   final SpectrumDataset dataset;
   const _DatasetHeader({required this.dataset});
 
   @override
   Widget build(BuildContext context) {
+    final l = AppLocalizations.of(context);
     final dist     = dataset.polymerDistribution;
     final analyzed = dataset.analyzedCount;
 
@@ -248,31 +261,30 @@ class _DatasetHeader extends StatelessWidget {
         Wrap(spacing: 12, runSpacing: 6, children: [
           _MetaChip(Icons.location_on_outlined, dataset.location),
           _MetaChip(Icons.calendar_today_outlined, _fmtDate(dataset.createdAt)),
-          _MetaChip(Icons.science_outlined, '${dataset.samples.length} amostras'),
-          _MetaChip(Icons.biotech_outlined, dataset.microscopeMode.label),
+          _MetaChip(Icons.science_outlined, l.datasetSamples(dataset.samples.length)),
+          _MetaChip(Icons.biotech_outlined, _modeLabel(l, dataset.microscopeMode)),
           _MetaChip(Icons.memory_outlined, dataset.detectorType),
-          _MetaChip(Icons.tune, '${dataset.resolution.toInt()} cm⁻¹ · ${dataset.numScans} scans'),
+          _MetaChip(Icons.tune,
+              '${dataset.resolution.toInt()} cm⁻¹ · ${dataset.numScans} scans'),
           if (dataset.crystalType != '—')
             _MetaChip(Icons.diamond_outlined, dataset.crystalType),
         ]),
-
         const SizedBox(height: 12),
         Row(children: [
           _StatBadge('${dataset.analyzedCount}/${dataset.samples.length}',
-              'Analisadas', Colors.cyanAccent),
+              l.datasetDetailStatAnalyzed, Colors.cyanAccent),
           const SizedBox(width: 12),
           _StatBadge('${dataset.verifiedCount}/${dataset.samples.length}',
-              'Verificadas', Colors.purpleAccent),
+              l.datasetDetailStatVerified, Colors.purpleAccent),
           if (dataset.avgConfidence > 0) ...[
             const SizedBox(width: 12),
             _StatBadge('${(dataset.avgConfidence * 100).toStringAsFixed(1)}%',
-                'Conf. média', Colors.greenAccent),
+                l.datasetDetailStatAvgConf, Colors.greenAccent),
           ],
         ]),
-
         if (dist.isNotEmpty) ...[
           const SizedBox(height: 16),
-          Text('DISTRIBUIÇÃO DE POLÍMEROS',
+          Text(l.datasetDetailPolymerDistribution,
               style: TextStyle(
                 color: Colors.cyanAccent.withValues(alpha: 0.7),
                 fontSize: 10,
@@ -316,8 +328,8 @@ class _DatasetHeader extends StatelessWidget {
                 ),
                 const SizedBox(width: 10),
                 SizedBox(
-                  width: 52,
-                  child: Text('${ e.value}/$analyzed  ${(frac * 100).toStringAsFixed(0)}%',
+                  width: 60,
+                  child: Text('${e.value}/$analyzed  ${(frac * 100).toStringAsFixed(0)}%',
                       style: TextStyle(
                           color: color, fontSize: 11, fontWeight: FontWeight.bold),
                       textAlign: TextAlign.right),
@@ -328,6 +340,14 @@ class _DatasetHeader extends StatelessWidget {
         ],
       ]),
     );
+  }
+
+  String _modeLabel(AppLocalizations l, MicroscopeMode m) {
+    switch (m) {
+      case MicroscopeMode.atr: return l.modeAtr;
+      case MicroscopeMode.transmission: return l.modeTransmission;
+      case MicroscopeMode.reflection: return l.modeReflection;
+    }
   }
 
   String _fmtDate(DateTime d) =>
@@ -397,6 +417,7 @@ class _SampleRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l = AppLocalizations.of(context);
     final result  = sample.result;
     final polymer = result?.polymer;
     final conf    = result?.confidence ?? 0;
@@ -418,11 +439,8 @@ class _SampleRow extends StatelessWidget {
                     overflow: TextOverflow.ellipsis)),
                 if (sample.isVerified) ...[
                   const SizedBox(width: 4),
-                  Tooltip(
-                    message: 'Verificada por ${sample.verifiedBy}',
-                    child: const Icon(Icons.verified,
-                        size: 13, color: Colors.greenAccent),
-                  ),
+                  const Icon(Icons.verified,
+                      size: 13, color: Colors.greenAccent),
                 ],
               ]),
               const SizedBox(height: 2),
@@ -452,7 +470,7 @@ class _SampleRow extends StatelessWidget {
                             fontSize: 12,
                             fontWeight: FontWeight.bold)),
                   )
-                : Text('Pendente',
+                : Text(l.sampleMetaPending,
                     style: TextStyle(
                         color: Colors.white.withValues(alpha: 0.3),
                         fontSize: 12))),

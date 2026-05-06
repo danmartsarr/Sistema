@@ -1,23 +1,24 @@
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
+import '../l10n/app_localizations.dart';
 import '../models/spectrum_model.dart';
 
-// ── Constants ────────────────────────────────────────────────────────────────
-const double _leftPad   = 66;  // aumentado para dar espaço ao label do eixo Y
+//Constants 
+const double _leftPad   = 66;  
 const double _rightPad  = 16;
 const double _topPad    = 16;
 const double _bottomPad = 44;
 const double _wnMin     = 400;
 const double _wnMax     = 4000;
 
-// ── Coordinate helpers ───────────────────────────────────────────────────────
+//Coordinate helpers 
 double _wnToX(double wn, double chartW) =>
     _leftPad + (_wnMax - wn) / (_wnMax - _wnMin) * chartW;
 
 double _intToY(double intensity, double maxI, double chartH) =>
     _topPad + chartH - (intensity / maxI) * chartH;
 
-// ── Painter ──────────────────────────────────────────────────────────────────
+//Painter
 class _FtirPainter extends CustomPainter {
   final List<SpectralPoint> spectralData;
   final List<AttentionPoint>? attentionMap;
@@ -43,7 +44,7 @@ class _FtirPainter extends CustomPainter {
     final chartH = size.height - _topPad - _bottomPad;
     final maxI   = spectralData.map((p) => p.intensity).reduce((a, b) => a > b ? a : b);
 
-    // 1. Attention heatmap ──────────────────────────────────────────────────
+    // 1. Attention heatmap
     if (attentionMap != null && attentionMap!.length > 1) {
       for (int i = 0; i < attentionMap!.length - 1; i++) {
         final ap  = attentionMap![i];
@@ -65,7 +66,7 @@ class _FtirPainter extends CustomPainter {
       }
     }
 
-    // 2. Grid lines ─────────────────────────────────────────────────────────
+    // 2. Grid lines 
     final gridPaint = Paint()
       ..color = Colors.white.withValues(alpha: 0.06)
       ..strokeWidth = 1;
@@ -83,7 +84,6 @@ class _FtirPainter extends CustomPainter {
       final val = maxI * i / ySteps;
       final y   = _intToY(val, maxI, chartH);
       canvas.drawLine(Offset(_leftPad, y), Offset(_leftPad + chartW, y), gridPaint);
-      // números alinhados à direita, terminando a 4px do eixo
       final numTp = TextPainter(
         text: TextSpan(text: val.toStringAsFixed(2), style: tickStyle),
         textDirection: TextDirection.ltr,
@@ -92,7 +92,7 @@ class _FtirPainter extends CustomPainter {
     }
 
     _drawText(
-      canvas, 'Número de Onda (cm⁻¹)',
+      canvas, 'Wavenumber (cm⁻¹)',
       Offset(_leftPad + chartW / 2, size.height - 6),
       TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 11),
       center: true,
@@ -103,11 +103,11 @@ class _FtirPainter extends CustomPainter {
       TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 11),
     );
 
-    // 3. Clip to chart area ─────────────────────────────────────────────────
+    // 3. Clip to chart area 
     canvas.save();
     canvas.clipRect(Rect.fromLTWH(_leftPad, _topPad, chartW, chartH));
 
-    // 4. Spectrum fill ──────────────────────────────────────────────────────
+    // 4. Spectrum fill 
     final fillPath = Path();
     bool firstFill = true;
     for (final p in spectralData) {
@@ -137,7 +137,7 @@ class _FtirPainter extends CustomPainter {
         ),
     );
 
-    // 5. Spectrum line ──────────────────────────────────────────────────────
+    // 5. Spectrum line 
     final linePath = Path();
     bool firstLine = true;
     for (final p in spectralData) {
@@ -156,7 +156,7 @@ class _FtirPainter extends CustomPainter {
         ..strokeJoin = StrokeJoin.round,
     );
 
-    // 6. Decision marker ────────────────────────────────────────────────────
+    // 6. Decision marker 
     if (decisionWavenumber != null) {
       final dx = _wnToX(decisionWavenumber!, chartW);
       _drawDashedLine(
@@ -174,7 +174,7 @@ class _FtirPainter extends CustomPainter {
 
     canvas.restore();
 
-    // 7. Crosshair + tooltip ────────────────────────────────────────────────
+    // 7. Crosshair + tooltip 
     if (crosshair != null) {
       final cx = crosshair!.dx.clamp(_leftPad, _leftPad + chartW);
       canvas.drawLine(
@@ -201,7 +201,7 @@ class _FtirPainter extends CustomPainter {
       }
     }
 
-    // 8. Axes border ────────────────────────────────────────────────────────
+    // 8. Axes border 
     final axisPaint = Paint()
       ..color = Colors.white.withValues(alpha: 0.2)
       ..strokeWidth = 1;
@@ -268,7 +268,7 @@ class _FtirPainter extends CustomPainter {
       old.decisionWavenumber != decisionWavenumber;
 }
 
-// ── Public Widget ─────────────────────────────────────────────────────────────
+// Public Widget 
 class FtirChart extends StatefulWidget {
   final SpectrumSample sample;
   final bool showAttention;
@@ -288,9 +288,12 @@ class _FtirChartState extends State<FtirChart> {
 
   @override
   Widget build(BuildContext context) {
+    final l = AppLocalizations.of(context);
     final sample = widget.sample;
     final color  = sample.result?.polymer.color ?? Colors.cyanAccent;
-    final yLabel = _showTransmittance ? 'Transmitância (%)' : 'Absorbância (u.a.)';
+    final yLabel = _showTransmittance
+        ? '${l.chartTransmittance} (%)'
+        : '${l.chartAbsorbance} (a.u.)';
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -300,13 +303,13 @@ class _FtirChartState extends State<FtirChart> {
           mainAxisAlignment: MainAxisAlignment.end,
           children: [
             _ChipToggle(
-              label: 'Absorbância',
+              label: l.chartAbsorbance,
               active: !_showTransmittance,
               onTap: () => setState(() => _showTransmittance = false),
             ),
             const SizedBox(width: 8),
             _ChipToggle(
-              label: 'Transmitância',
+              label: l.chartTransmittance,
               active: _showTransmittance,
               onTap: () => setState(() => _showTransmittance = true),
             ),
@@ -319,10 +322,11 @@ class _FtirChartState extends State<FtirChart> {
                   borderRadius: BorderRadius.circular(20),
                   border: Border.all(color: const Color(0xFFFF6D00).withValues(alpha: 0.4)),
                 ),
-                child: const Row(children: [
-                  Icon(Icons.blur_on, size: 12, color: Color(0xFFFF6D00)),
-                  SizedBox(width: 4),
-                  Text('Atenção', style: TextStyle(color: Color(0xFFFF6D00), fontSize: 11)),
+                child: Row(children: [
+                  const Icon(Icons.blur_on, size: 12, color: Color(0xFFFF6D00)),
+                  const SizedBox(width: 4),
+                  Text(l.chartAttention,
+                      style: const TextStyle(color: Color(0xFFFF6D00), fontSize: 11)),
                 ]),
               ),
             ],
@@ -360,7 +364,7 @@ class _FtirChartState extends State<FtirChart> {
               Container(width: 12, height: 3,
                 color: Colors.amber.withValues(alpha: 0.8)),
               const SizedBox(width: 6),
-              Text('Ponto de decisão',
+              Text(l.chartLegendDecision,
                 style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 11)),
               const SizedBox(width: 16),
               Container(
@@ -371,7 +375,7 @@ class _FtirChartState extends State<FtirChart> {
                 ),
               ),
               const SizedBox(width: 6),
-              Text('Região de atenção',
+              Text(l.chartLegendAttention,
                 style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 11)),
             ]),
           ),

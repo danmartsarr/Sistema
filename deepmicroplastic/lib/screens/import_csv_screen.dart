@@ -1,5 +1,6 @@
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import '../l10n/app_localizations.dart';
 import '../models/spectrum_model.dart';
 import '../models/user_model.dart';
 import '../services/csv_import_service.dart';
@@ -10,12 +11,8 @@ class ImportCsvScreen extends StatefulWidget {
   final SpectrumDataset dataset;
   final UserModel loggedUser;
 
-  /// Local de coleta padrão usado para todas as amostras importadas.
-  /// Quando aberta a partir do fluxo de cadastro de lote, herda do form.
   final String? defaultSite;
 
-  /// Observações compartilhadas. Substituem o texto-padrão "Identificado…"
-  /// quando preenchido pelo fluxo de cadastro.
   final String? defaultNotes;
 
   const ImportCsvScreen({
@@ -31,7 +28,6 @@ class ImportCsvScreen extends StatefulWidget {
 }
 
 class _ImportCsvScreenState extends State<ImportCsvScreen> {
-  // ── Estado ──────────────────────────────────────────────────────────────────
   String? _filePath;
   String? _fileName;
   bool _loading = false;
@@ -39,14 +35,14 @@ class _ImportCsvScreenState extends State<ImportCsvScreen> {
   List<CsvSampleResult> _results = [];
   bool _saving = false;
 
-  // ── Ações ────────────────────────────────────────────────────────────────────
+  String get _slug => widget.loggedUser.institutionSlug;
+
   Future<void> _pickFile() async {
     final result = await FilePicker.pickFiles(
       type: FileType.custom,
       allowedExtensions: const ['csv'],
     );
     if (result == null || result.files.single.path == null) return;
-
     setState(() {
       _filePath  = result.files.single.path;
       _fileName  = result.files.single.name;
@@ -58,7 +54,6 @@ class _ImportCsvScreenState extends State<ImportCsvScreen> {
   Future<void> _runPrediction() async {
     if (_filePath == null) return;
     setState(() { _loading = true; _errorMsg = null; _results = []; });
-
     try {
       final results = await CsvImportService.predictFromCsv(_filePath!, _fileName!);
       setState(() => _results = results);
@@ -70,24 +65,23 @@ class _ImportCsvScreenState extends State<ImportCsvScreen> {
   }
 
   Future<void> _importSamples() async {
+    final l = AppLocalizations.of(context);
     if (_results.isEmpty) return;
     setState(() => _saving = true);
 
     final site  = widget.defaultSite?.trim().isNotEmpty == true
         ? widget.defaultSite!.trim()
-        : 'Importado via CSV';
+        : 'Imported via CSV';
     final extra = widget.defaultNotes?.trim();
     int saved = 0;
 
     for (final r in _results) {
-      // ID rastreável aleatório, NÃO derivado do nome do CSV.
-      // O nome original fica registrado nas observações para rastreabilidade.
       final id          = SampleIdGenerator.generateInternalId();
       final displayName = SampleIdGenerator.generateName(widget.dataset.name);
-      final traceLine   = 'CSV linha ${r.row + 1} • origem: ${r.originalCsvName}';
+      final traceLine   = 'CSV row ${r.row + 1} • source: ${r.originalCsvName}';
       final notes       = extra == null || extra.isEmpty
-          ? '$traceLine\nIdentificado automaticamente pelo modelo MLP.'
-          : '$extra\n$traceLine\nIdentificado automaticamente pelo modelo MLP.';
+          ? traceLine
+          : '$extra\n$traceLine';
 
       final sample = SpectrumSample(
         id:             id,
@@ -101,7 +95,11 @@ class _ImportCsvScreenState extends State<ImportCsvScreen> {
       );
 
       final ok = await SampleService.save(
-          sample, widget.dataset.id, widget.loggedUser.username);
+        sample,
+        _slug,
+        widget.dataset.id,
+        widget.loggedUser.username,
+      );
       if (ok) {
         widget.dataset.samples.add(sample);
         saved++;
@@ -112,56 +110,45 @@ class _ImportCsvScreenState extends State<ImportCsvScreen> {
     setState(() => _saving = false);
 
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text('$saved amostra(s) importada(s) com sucesso.'),
+      content: Text(l.importCsvImportedToast(saved)),
       backgroundColor: Colors.greenAccent.withValues(alpha: 0.9),
     ));
-
     Navigator.pop(context, saved > 0);
   }
 
-  // ── Build ─────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
+    final l = AppLocalizations.of(context);
     return Scaffold(
       backgroundColor: const Color(0xFF0A0E21),
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
-        title: const Text('Importar CSV',
-            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+        title: Text(l.importCsvTitle,
+            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.fromLTRB(20, 8, 20, 40),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-
-          // ── Instrução ──────────────────────────────────────────────────────
           _GlassCard(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            const _SectionLabel('FORMATO DO ARQUIVO'),
+            _SectionLabel(l.importCsvSectionFormat),
             const SizedBox(height: 10),
-            _InfoLine(Icons.table_chart_outlined,
-                'Cada linha do CSV = uma amostra espectral'),
+            _InfoLine(Icons.table_chart_outlined, l.importCsvFormat1),
             const SizedBox(height: 6),
-            _InfoLine(Icons.tag,
-                'Cabeçalhos numéricos (ex.: 600.0, 3998.0) = números de onda'),
+            _InfoLine(Icons.tag, l.importCsvFormat2),
             const SizedBox(height: 6),
-            _InfoLine(Icons.auto_fix_high_outlined,
-                'Colunas categóricas (name, sample, interpretation…) são '
-                'removidas automaticamente'),
+            _InfoLine(Icons.auto_fix_high_outlined, l.importCsvFormat3),
             const SizedBox(height: 6),
-            _InfoLine(Icons.biotech_outlined,
-                'O modelo MLP identifica: PE, PP, PS, PA, EVA, celulose'),
+            _InfoLine(Icons.biotech_outlined, l.importCsvFormat4),
           ])),
-
           const SizedBox(height: 16),
-
-          // ── Seleção de arquivo ─────────────────────────────────────────────
           _GlassCard(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            const _SectionLabel('ARQUIVO'),
+            _SectionLabel(l.importCsvSectionFile),
             const SizedBox(height: 12),
             Row(children: [
               Expanded(
                 child: _fileName == null
-                    ? Text('Nenhum arquivo selecionado',
+                    ? Text(l.importCsvNoFile,
                         style: TextStyle(
                             color: Colors.white.withValues(alpha: 0.35),
                             fontSize: 13))
@@ -189,14 +176,11 @@ class _ImportCsvScreenState extends State<ImportCsvScreen> {
                 ),
                 onPressed: _loading ? null : _pickFile,
                 icon: const Icon(Icons.folder_open_outlined, size: 16),
-                label: const Text('Escolher'),
+                label: Text(l.importCsvChoose),
               ),
             ]),
           ])),
-
           const SizedBox(height: 12),
-
-          // ── Botão identificar ─────────────────────────────────────────────
           SizedBox(
             width: double.infinity,
             height: 52,
@@ -218,8 +202,9 @@ class _ImportCsvScreenState extends State<ImportCsvScreen> {
                   : const Icon(Icons.biotech_outlined, size: 20),
               label: Text(
                 _loading
-                    ? 'IDENTIFICANDO ${_results.isNotEmpty ? "(${_results.length})" : ""}…'
-                    : 'IDENTIFICAR AMOSTRAS',
+                    ? l.importCsvIdentifying(
+                        _results.isNotEmpty ? '(${_results.length})' : '')
+                    : l.importCsvIdentify,
                 style: const TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.bold,
@@ -227,8 +212,6 @@ class _ImportCsvScreenState extends State<ImportCsvScreen> {
               ),
             ),
           ),
-
-          // ── Erro ──────────────────────────────────────────────────────────
           if (_errorMsg != null) ...[
             const SizedBox(height: 12),
             Container(
@@ -253,15 +236,14 @@ class _ImportCsvScreenState extends State<ImportCsvScreen> {
               ]),
             ),
           ],
-
-          // ── Resultados ────────────────────────────────────────────────────
           if (_results.isNotEmpty) ...[
             const SizedBox(height: 20),
             Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-              _SectionLabel('RESULTADOS (${_results.length} amostra(s))'),
+              _SectionLabel(l.importCsvResults(_results.length)),
               Text(
-                '${_results.where((r) => r.identification.confidence >= 0.9).length} '
-                'alta confiança',
+                l.importCsvHighConf(_results
+                    .where((r) => r.identification.confidence >= 0.9)
+                    .length),
                 style: const TextStyle(
                     color: Colors.greenAccent,
                     fontSize: 11,
@@ -270,7 +252,6 @@ class _ImportCsvScreenState extends State<ImportCsvScreen> {
             ]),
             const SizedBox(height: 10),
             ..._results.map((r) => _ResultRow(result: r)),
-
             const SizedBox(height: 20),
             SizedBox(
               width: double.infinity,
@@ -294,8 +275,8 @@ class _ImportCsvScreenState extends State<ImportCsvScreen> {
                     : const Icon(Icons.save_outlined, size: 20),
                 label: Text(
                   _saving
-                      ? 'SALVANDO…'
-                      : 'IMPORTAR ${_results.length} AMOSTRA(S) PARA O DATASET',
+                      ? l.importCsvSaving
+                      : l.importCsvImport(_results.length),
                   style: const TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.bold,
@@ -309,8 +290,6 @@ class _ImportCsvScreenState extends State<ImportCsvScreen> {
     );
   }
 }
-
-// ── Widgets auxiliares ────────────────────────────────────────────────────────
 
 class _GlassCard extends StatelessWidget {
   final Widget child;
@@ -370,7 +349,6 @@ class _ResultRow extends StatelessWidget {
     final id    = result.identification;
     final color = id.polymer.color;
     final conf  = id.confidence;
-
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
@@ -380,7 +358,6 @@ class _ResultRow extends StatelessWidget {
         border: Border.all(color: color.withValues(alpha: 0.2)),
       ),
       child: Row(children: [
-        // Índice
         SizedBox(
           width: 28,
           child: Text('${result.row + 1}',
@@ -388,7 +365,6 @@ class _ResultRow extends StatelessWidget {
                   color: Colors.white.withValues(alpha: 0.3),
                   fontSize: 11)),
         ),
-        // Nome original do CSV (rastreabilidade) — o ID real é gerado no save
         Expanded(
           flex: 3,
           child: Text(result.originalCsvName,
@@ -399,7 +375,6 @@ class _ResultRow extends StatelessWidget {
               overflow: TextOverflow.ellipsis),
         ),
         const SizedBox(width: 8),
-        // Badge polímero
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
           decoration: BoxDecoration(
@@ -414,7 +389,6 @@ class _ResultRow extends StatelessWidget {
                   fontWeight: FontWeight.bold)),
         ),
         const SizedBox(width: 10),
-        // Confiança
         Text(
           '${(conf * 100).toStringAsFixed(0)}%',
           style: TextStyle(

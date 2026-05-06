@@ -8,11 +8,12 @@ Endpoints:
   GET  /health                       — status + class list
   POST /predict                      — JSON body: {wavenumbers, intensities}
   POST /predict_csv                  — multipart upload: CSV (linha = amostra)
-  POST /spectra/{dataset_id}         — JSON: {sample_id, wavenumbers, intensities}
+  POST   /spectra/{institution_slug}/{dataset_id}
+                                     — JSON: {sample_id, wavenumbers, intensities}
                                        Persiste o espectro num CSV do dataset.
-  GET  /spectra/{dataset_id}/{sample_id}
+  GET    /spectra/{institution_slug}/{dataset_id}/{sample_id}
                                      — Lê o espectro persistido por ID.
-  DELETE /spectra/{dataset_id}/{sample_id}
+  DELETE /spectra/{institution_slug}/{dataset_id}/{sample_id}
                                      — Remove a linha do espectro.
 
 Preprocessing:
@@ -177,11 +178,19 @@ class SpectrumStoreRequest(BaseModel):
     intensities: list[float]
 
 
-def _spectra_csv_path(dataset_id: str) -> str:
-    safe = "".join(c for c in dataset_id if c.isalnum() or c in "-_")
+def _safe_segment(value: str, label: str) -> str:
+    safe = "".join(c for c in value if c.isalnum() or c in "-_")
     if not safe:
-        raise HTTPException(status_code=400, detail="dataset_id inválido")
-    return os.path.join(SPECTRA_DIR, f"{safe}.csv")
+        raise HTTPException(status_code=400, detail=f"{label} inválido")
+    return safe
+
+
+def _spectra_csv_path(institution_slug: str, dataset_id: str) -> str:
+    inst = _safe_segment(institution_slug, "institution_slug")
+    ds = _safe_segment(dataset_id, "dataset_id")
+    inst_dir = os.path.join(SPECTRA_DIR, inst)
+    os.makedirs(inst_dir, exist_ok=True)
+    return os.path.join(inst_dir, f"{ds}.csv")
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
@@ -282,8 +291,8 @@ async def predict_csv(file: UploadFile = File(...)):
 # A primeira coluna é o sample_id; as demais são números de onda (header).
 # Lookup é feito lendo o CSV e filtrando pela primeira coluna.
 
-@app.post("/spectra/{dataset_id}")
-def save_spectrum(dataset_id: str, req: SpectrumStoreRequest):
+@app.post("/spectra/{institution_slug}/{dataset_id}")
+def save_spectrum(institution_slug: str, dataset_id: str, req: SpectrumStoreRequest):
     """Acrescenta (ou substitui) o espectro de uma amostra no CSV do dataset."""
     if len(req.wavenumbers) != len(req.intensities):
         raise HTTPException(
@@ -291,7 +300,7 @@ def save_spectrum(dataset_id: str, req: SpectrumStoreRequest):
             detail="wavenumbers e intensities devem ter o mesmo tamanho",
         )
 
-    path = _spectra_csv_path(dataset_id)
+    path = _spectra_csv_path(institution_slug, dataset_id)
     new_row = pd.DataFrame(
         [[req.sample_id] + list(req.intensities)],
         columns=["sample_id"] + [str(w) for w in req.wavenumbers],
@@ -328,10 +337,10 @@ def save_spectrum(dataset_id: str, req: SpectrumStoreRequest):
     return {"status": "ok", "sample_id": req.sample_id, "rows": len(df)}
 
 
-@app.get("/spectra/{dataset_id}/{sample_id}")
-def load_spectrum(dataset_id: str, sample_id: str):
+@app.get("/spectra/{institution_slug}/{dataset_id}/{sample_id}")
+def load_spectrum(institution_slug: str, dataset_id: str, sample_id: str):
     """Retorna o espectro persistido (wavenumbers + intensities) por ID."""
-    path = _spectra_csv_path(dataset_id)
+    path = _spectra_csv_path(institution_slug, dataset_id)
     if not os.path.exists(path):
         raise HTTPException(status_code=404, detail="dataset sem espectros salvos")
 
@@ -350,9 +359,9 @@ def load_spectrum(dataset_id: str, sample_id: str):
     }
 
 
-@app.delete("/spectra/{dataset_id}/{sample_id}")
-def delete_spectrum(dataset_id: str, sample_id: str):
-    path = _spectra_csv_path(dataset_id)
+@app.delete("/spectra/{institution_slug}/{dataset_id}/{sample_id}")
+def delete_spectrum(institution_slug: str, dataset_id: str, sample_id: str):
+    path = _spectra_csv_path(institution_slug, dataset_id)
     if not os.path.exists(path):
         return {"status": "ok", "removed": 0}
     df = pd.read_csv(path)

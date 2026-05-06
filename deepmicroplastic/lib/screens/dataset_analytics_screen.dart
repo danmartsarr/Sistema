@@ -19,7 +19,6 @@ class DatasetAnalyticsScreen extends StatelessWidget {
       body: Stack(
         fit: StackFit.expand,
         children: [
-          // Background Imersivo
           Image.network(
             'https://images.unsplash.com/photo-1518531933037-91b2f5f229cc?q=80&w=1000&auto=format&fit=crop',
             fit: BoxFit.cover,
@@ -27,14 +26,12 @@ class DatasetAnalyticsScreen extends StatelessWidget {
             colorBlendMode: BlendMode.darken,
           ),
           
-          // Conteúdo do Dashboard
           SafeArea(
             child: SingleChildScrollView(
               padding: const EdgeInsets.all(20),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // 1. KPIs Principais
                   Row(
                     children: [
                       Expanded(child: _buildKpiCard('Amostras', '12.4K', Icons.science, Colors.cyanAccent)),
@@ -44,7 +41,6 @@ class DatasetAnalyticsScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: 24),
 
-                  // 2. Gráfico de Distribuição de Substâncias
                   _buildGlassContainer(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -69,7 +65,6 @@ class DatasetAnalyticsScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: 24),
 
-                  // 3. Confiabilidade do Modelo de IA
                   _buildGlassContainer(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -102,7 +97,6 @@ class DatasetAnalyticsScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: 24),
 
-                  // 4. Fluxo de Ingestão de Dados
                   _buildGlassContainer(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -126,7 +120,6 @@ class DatasetAnalyticsScreen extends StatelessWidget {
     );
   }
 
-  // --- COMPONENTES VISUAIS PERSONALIZADOS ---
 
   Widget _buildGlassContainer({required Widget child}) {
     return ClipRRect(

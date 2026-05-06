@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../l10n/app_localizations.dart';
 import '../models/spectrum_model.dart';
 import '../models/user_model.dart';
 import '../services/mlp_service.dart';
@@ -29,6 +30,8 @@ class _SampleDetailScreenState extends State<SampleDetailScreen> {
   bool _identifying = false;
   bool _loadingSpectrum = false;
 
+  String get _slug => widget.loggedUser.institutionSlug;
+
   @override
   void initState() {
     super.initState();
@@ -36,30 +39,25 @@ class _SampleDetailScreenState extends State<SampleDetailScreen> {
     if (_sample.spectralData.isEmpty) _hydrate();
   }
 
-  /// Busca o espectro persistido (CSV no servidor) — cada linha do CSV é
-  /// localizada pelo `sample.id`. Sem isso, o gráfico ficaria vazio depois
-  /// de fechar e reabrir o app.
   Future<void> _hydrate() async {
     setState(() => _loadingSpectrum = true);
-    await SampleService.hydrateSpectrum(_sample, widget.dataset.id);
+    await SampleService.hydrateSpectrum(_sample, _slug, widget.dataset.id);
     if (!mounted) return;
     setState(() => _loadingSpectrum = false);
   }
 
   Future<void> _runIdentification() async {
+    final l = AppLocalizations.of(context);
     setState(() => _identifying = true);
     final result = await MlpService.identify(_sample);
     if (!mounted) return;
     if (result != null) {
       setState(() => _sample.result = result);
-      // Persiste o resultado (incluindo attentionMap) no Firebase para que
-      // o gráfico com pontos de atenção continue disponível depois.
-      await SampleService.update(_sample);
+      await SampleService.update(_sample, _slug);
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Não foi possível conectar ao servidor MLP. '
-              'Verifique se mlp_server.py está em execução.'),
+        SnackBar(
+          content: Text(l.sampleNoServer),
           backgroundColor: Colors.redAccent,
         ),
       );
@@ -84,30 +82,31 @@ class _SampleDetailScreenState extends State<SampleDetailScreen> {
   }
 
   void _confirmDelete() {
+    final l = AppLocalizations.of(context);
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
         backgroundColor: const Color(0xFF111827),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text('Remover amostra?',
-            style: TextStyle(color: Colors.white)),
+        title: Text(l.sampleRemoveTitle,
+            style: const TextStyle(color: Colors.white)),
         content: Text(
-          'A amostra "${_sample.name}" será removida permanentemente.',
+          l.sampleRemoveBody(_sample.name),
           style: TextStyle(color: Colors.white.withValues(alpha: 0.65)),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Cancelar',
-                style: TextStyle(color: Colors.white54)),
+            child: Text(l.actionCancel,
+                style: const TextStyle(color: Colors.white54)),
           ),
           TextButton(
             onPressed: () {
               Navigator.pop(context);
               Future.microtask(() => widget.onDelete());
             },
-            child: const Text('Remover',
-                style: TextStyle(
+            child: Text(l.actionRemove,
+                style: const TextStyle(
                     color: Colors.redAccent, fontWeight: FontWeight.bold)),
           ),
         ],
@@ -117,6 +116,7 @@ class _SampleDetailScreenState extends State<SampleDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l = AppLocalizations.of(context);
     final result = _sample.result;
 
     return Scaffold(
@@ -138,18 +138,19 @@ class _SampleDetailScreenState extends State<SampleDetailScreen> {
                     ),
                   )
                 : IconButton(
-                    icon: const Icon(Icons.biotech_outlined, color: Colors.cyanAccent),
-                    tooltip: 'Identificar com MLP',
+                    icon: const Icon(Icons.biotech_outlined,
+                        color: Colors.cyanAccent),
+                    tooltip: l.sampleIdentifyTooltip,
                     onPressed: _runIdentification,
                   ),
           IconButton(
             icon: const Icon(Icons.edit_outlined),
-            tooltip: 'Editar',
+            tooltip: l.actionEdit,
             onPressed: _openEdit,
           ),
           IconButton(
             icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
-            tooltip: 'Remover',
+            tooltip: l.actionRemove,
             onPressed: _confirmDelete,
           ),
         ],
@@ -159,8 +160,6 @@ class _SampleDetailScreenState extends State<SampleDetailScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-
-            // Badge de verificação
             if (_sample.isVerified)
               Container(
                 margin: const EdgeInsets.only(bottom: 16),
@@ -176,13 +175,13 @@ class _SampleDetailScreenState extends State<SampleDetailScreen> {
                       color: Colors.greenAccent, size: 18),
                   const SizedBox(width: 10),
                   Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    const Text('Amostra Verificada',
-                        style: TextStyle(
+                    Text(l.sampleVerified,
+                        style: const TextStyle(
                             color: Colors.greenAccent,
                             fontWeight: FontWeight.bold,
                             fontSize: 13)),
                     if (_sample.verifiedBy.isNotEmpty)
-                      Text('por ${_sample.verifiedBy}',
+                      Text(l.sampleVerifiedBy(_sample.verifiedBy),
                           style: TextStyle(
                               color: Colors.white.withValues(alpha: 0.5),
                               fontSize: 12)),
@@ -190,21 +189,18 @@ class _SampleDetailScreenState extends State<SampleDetailScreen> {
                 ]),
               ),
 
-            // Metadata
             _GlassCard(
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                const _SectionLabel('INFORMAÇÕES DA AMOSTRA'),
+                _SectionLabel(l.sampleSectionInfo),
                 const SizedBox(height: 14),
                 _SampleMetaGrid(sample: _sample),
               ]),
             ),
-
             const SizedBox(height: 16),
 
-            // Calibração do dataset
             _GlassCard(
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                const _SectionLabel('CALIBRAÇÃO DO EQUIPAMENTO'),
+                _SectionLabel(l.sampleSectionCalibration),
                 const SizedBox(height: 4),
                 Text(widget.dataset.name,
                     style: TextStyle(
@@ -215,13 +211,11 @@ class _SampleDetailScreenState extends State<SampleDetailScreen> {
               ]),
             ),
 
-            // Resultado de identificação
             if (result != null) ...[
               const SizedBox(height: 20),
               _ResultBanner(result: result),
             ],
 
-            // Botão de identificação (quando há espectro sem resultado)
             if (_sample.spectralData.isNotEmpty && result == null) ...[
               const SizedBox(height: 20),
               SizedBox(
@@ -231,7 +225,8 @@ class _SampleDetailScreenState extends State<SampleDetailScreen> {
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.cyanAccent.withValues(alpha: 0.12),
                     foregroundColor: Colors.cyanAccent,
-                    side: BorderSide(color: Colors.cyanAccent.withValues(alpha: 0.5)),
+                    side: BorderSide(
+                        color: Colors.cyanAccent.withValues(alpha: 0.5)),
                     shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(14)),
                     elevation: 0,
@@ -244,7 +239,7 @@ class _SampleDetailScreenState extends State<SampleDetailScreen> {
                               strokeWidth: 2, color: Colors.cyanAccent))
                       : const Icon(Icons.biotech_outlined, size: 20),
                   label: Text(
-                    _identifying ? 'IDENTIFICANDO...' : 'IDENTIFICAR COM MLP',
+                    _identifying ? l.sampleIdentifying : l.sampleIdentifyMlp,
                     style: const TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.bold,
@@ -254,12 +249,11 @@ class _SampleDetailScreenState extends State<SampleDetailScreen> {
               ),
             ],
 
-            // Espectro FTIR (só se houver dados)
             if (_sample.spectralData.isNotEmpty) ...[
               const SizedBox(height: 20),
               _GlassCard(
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  const _SectionLabel('ESPECTRO FTIR'),
+                  _SectionLabel(l.sampleSpectrumTitle),
                   const SizedBox(height: 16),
                   FtirChart(sample: _sample, showAttention: result != null),
                 ]),
@@ -277,35 +271,37 @@ class _SampleDetailScreenState extends State<SampleDetailScreen> {
                             strokeWidth: 2, color: Colors.cyanAccent),
                       ),
                       const SizedBox(width: 12),
-                      Text(
-                        'Carregando espectro do servidor (ID ${_sample.id})…',
-                        style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.6),
-                            fontSize: 13),
+                      Expanded(
+                        child: Text(
+                          l.sampleNoSpectrumLoading(_sample.id),
+                          style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.6),
+                              fontSize: 13),
+                        ),
                       ),
                     ] else ...[
                       Icon(Icons.pending_outlined,
                           color: Colors.white.withValues(alpha: 0.3), size: 22),
                       const SizedBox(width: 12),
-                      Expanded(child: Text(
-                        'Sem dados espectrais para esta amostra. '
-                        'Anexe um CSV no cadastro ou importe via "Importar CSV".',
-                        style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.45),
-                            fontSize: 13),
-                      )),
+                      Expanded(
+                        child: Text(
+                          l.sampleNoSpectrum,
+                          style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.45),
+                              fontSize: 13),
+                        ),
+                      ),
                     ],
                   ]),
                 ),
               ),
             ],
 
-            // Análise do modelo
             if (result != null) ...[
               const SizedBox(height: 20),
               _GlassCard(
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  const _SectionLabel('ANÁLISE DO MODELO'),
+                  _SectionLabel(l.sampleSectionResult),
                   const SizedBox(height: 16),
                   _ModelAnalysisPanel(result: result),
                 ]),
@@ -313,7 +309,7 @@ class _SampleDetailScreenState extends State<SampleDetailScreen> {
               const SizedBox(height: 20),
               _GlassCard(
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  const _SectionLabel('BANDAS DIAGNÓSTICAS'),
+                  _SectionLabel(l.sampleSectionPeaks),
                   const SizedBox(height: 14),
                   ...result.keyPeaks.map((p) => Padding(
                     padding: const EdgeInsets.only(bottom: 10),
@@ -335,12 +331,11 @@ class _SampleDetailScreenState extends State<SampleDetailScreen> {
               ),
             ],
 
-            // Observações
             if (_sample.notes.isNotEmpty) ...[
               const SizedBox(height: 20),
               _GlassCard(
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  const _SectionLabel('OBSERVAÇÕES'),
+                  _SectionLabel(l.sampleSectionNotes),
                   const SizedBox(height: 10),
                   Text(_sample.notes,
                       style: TextStyle(
@@ -356,8 +351,6 @@ class _SampleDetailScreenState extends State<SampleDetailScreen> {
     );
   }
 }
-
-// ── Widgets ───────────────────────────────────────────────────────────────────
 
 class _GlassCard extends StatelessWidget {
   final Widget child;
@@ -392,28 +385,30 @@ class _SampleMetaGrid extends StatelessWidget {
   const _SampleMetaGrid({required this.sample});
   @override
   Widget build(BuildContext context) {
+    final l = AppLocalizations.of(context);
     final date = sample.collectionDate;
     final dateStr =
         '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
     return Column(children: [
       Row(children: [
-        Expanded(child: _MetaItem('Local', sample.collectionSite)),
-        Expanded(child: _MetaItem('Data de Coleta', dateStr)),
+        Expanded(child: _MetaItem(l.sampleMetaSite, sample.collectionSite)),
+        Expanded(child: _MetaItem(l.sampleMetaCollectionDate, dateStr)),
       ]),
       const SizedBox(height: 14),
       Row(children: [
         Expanded(child: _MetaItem(
-          'Tipo de Dado',
-          sample.dataType == DataType.absorbance ? 'Absorbância' : 'Transmitância',
+          l.sampleMetaDataType,
+          sample.dataType == DataType.absorbance
+              ? l.dataAbsorbance : l.dataTransmittance,
         )),
         if (sample.isVerified)
           Expanded(child: _MetaItem(
-            'Verificado por',
+            l.sampleMetaVerifiedBy,
             sample.verifiedBy.isEmpty ? '—' : sample.verifiedBy,
             valueColor: Colors.greenAccent,
           ))
         else
-          Expanded(child: _MetaItem('Verificação', 'Pendente',
+          Expanded(child: _MetaItem(l.sampleMetaVerification, l.sampleMetaPending,
               valueColor: Colors.white38)),
       ]),
     ]);
@@ -424,26 +419,36 @@ class _CalibrationGrid extends StatelessWidget {
   final SpectrumDataset dataset;
   const _CalibrationGrid({required this.dataset});
   @override
-  Widget build(BuildContext context) => Column(children: [
-        Row(children: [
-          Expanded(child: _MetaItem('Modo', dataset.microscopeMode.label)),
-          Expanded(child: _MetaItem('Equipamento',
-              dataset.microscopeModel.isEmpty ? 'Não informado' : dataset.microscopeModel)),
-        ]),
-        const SizedBox(height: 14),
-        Row(children: [
-          Expanded(child: _MetaItem('Resolução', '${dataset.resolution.toInt()} cm⁻¹')),
-          Expanded(child: _MetaItem('Nº de Scans', '${dataset.numScans}')),
-        ]),
-        const SizedBox(height: 14),
-        Row(children: [
-          Expanded(child: _MetaItem('Detector', dataset.detectorType)),
-          if (dataset.crystalType != '—')
-            Expanded(child: _MetaItem('Cristal ATR', dataset.crystalType))
-          else
-            const Expanded(child: SizedBox()),
-        ]),
-      ]);
+  Widget build(BuildContext context) {
+    final l = AppLocalizations.of(context);
+    String modeLabel(MicroscopeMode m) {
+      switch (m) {
+        case MicroscopeMode.atr: return l.modeAtr;
+        case MicroscopeMode.transmission: return l.modeTransmission;
+        case MicroscopeMode.reflection: return l.modeReflection;
+      }
+    }
+    return Column(children: [
+      Row(children: [
+        Expanded(child: _MetaItem(l.sampleCalMode, modeLabel(dataset.microscopeMode))),
+        Expanded(child: _MetaItem(l.sampleCalEquipment,
+            dataset.microscopeModel.isEmpty ? l.notInformed : dataset.microscopeModel)),
+      ]),
+      const SizedBox(height: 14),
+      Row(children: [
+        Expanded(child: _MetaItem(l.sampleCalResolution, '${dataset.resolution.toInt()} cm⁻¹')),
+        Expanded(child: _MetaItem(l.sampleCalScans, '${dataset.numScans}')),
+      ]),
+      const SizedBox(height: 14),
+      Row(children: [
+        Expanded(child: _MetaItem(l.sampleCalDetector, dataset.detectorType)),
+        if (dataset.crystalType != '—')
+          Expanded(child: _MetaItem(l.sampleCalAtrCrystal, dataset.crystalType))
+        else
+          const Expanded(child: SizedBox()),
+      ]),
+    ]);
+  }
 }
 
 class _MetaItem extends StatelessWidget {
@@ -455,8 +460,8 @@ class _MetaItem extends StatelessWidget {
   Widget build(BuildContext context) =>
       Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Text(label,
-            style:
-                TextStyle(color: Colors.white.withValues(alpha: 0.35), fontSize: 11)),
+            style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.35), fontSize: 11)),
         const SizedBox(height: 3),
         Text(value,
             style: TextStyle(
@@ -471,6 +476,7 @@ class _ResultBanner extends StatelessWidget {
   const _ResultBanner({required this.result});
   @override
   Widget build(BuildContext context) {
+    final l = AppLocalizations.of(context);
     final color = result.polymer.color;
     final isUnknown = result.polymer == PolymerType.unknown;
     return Container(
@@ -492,7 +498,7 @@ class _ResultBanner extends StatelessWidget {
         ),
         const SizedBox(width: 16),
         Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text('Polímero Identificado',
+          Text(l.sampleResultLabel,
               style: TextStyle(
                   color: Colors.white.withValues(alpha: 0.5), fontSize: 12)),
           const SizedBox(height: 2),
@@ -508,7 +514,7 @@ class _ResultBanner extends StatelessWidget {
                 fontWeight: FontWeight.bold,
                 shadows: [Shadow(color: color.withValues(alpha: 0.5), blurRadius: 12)],
               )),
-          Text('confiança',
+          Text(l.sampleConfidence,
               style: TextStyle(
                   color: Colors.white.withValues(alpha: 0.4), fontSize: 12)),
         ]),
@@ -522,6 +528,7 @@ class _ModelAnalysisPanel extends StatelessWidget {
   const _ModelAnalysisPanel({required this.result});
   @override
   Widget build(BuildContext context) {
+    final l = AppLocalizations.of(context);
     final color = result.polymer.color;
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Container(
@@ -545,7 +552,7 @@ class _ModelAnalysisPanel extends StatelessWidget {
       const SizedBox(height: 18),
       Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
         Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text('Ponto de Decisão',
+          Text(l.sampleDecisionPoint,
               style: TextStyle(
                   color: Colors.white.withValues(alpha: 0.4), fontSize: 12)),
           const SizedBox(height: 4),
