@@ -2,8 +2,6 @@ import 'package:flutter/material.dart';
 import '../l10n/app_localizations.dart';
 import '../main.dart';
 
-/// Reusable language menu (PT/EN). Uses the global `localeService` to
-/// hot-swap the UI without rebuilding the navigator.
 class LanguageMenu extends StatelessWidget {
   const LanguageMenu({super.key});
 

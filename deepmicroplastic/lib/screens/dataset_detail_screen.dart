@@ -108,8 +108,6 @@ class _DatasetDetailScreenState extends State<DatasetDetailScreen> {
                     )),
           );
           if (newSamples == null) return;
-          // Lista vazia = importou via CSV no modo lote (ou veio do CSV path);
-          // sempre recarregamos do Firebase para manter coerência total.
           await _loadSamples();
         },
       ),
@@ -225,8 +223,6 @@ class _DatasetDetailScreenState extends State<DatasetDetailScreen> {
                                 ),
                               ),
                             ).then((_) async {
-                              // Recarrega ao voltar para refletir alterações
-                              // (identificação, edição, etc).
                               await _loadSamples();
                             }),
                           ),

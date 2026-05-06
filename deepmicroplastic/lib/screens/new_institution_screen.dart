@@ -4,11 +4,6 @@ import '../models/institution_model.dart';
 import '../models/user_model.dart';
 import '../services/institution_service.dart';
 
-/// Registers a new institution + the initial admin.
-///
-/// `firstRun: true` is used by the login screen when no institution exists yet.
-/// Otherwise, this screen is accessible only via an authenticated admin's
-/// menu in `ManageInstitutionsScreen`.
 class NewInstitutionScreen extends StatefulWidget {
   final bool firstRun;
   const NewInstitutionScreen({super.key, this.firstRun = false});

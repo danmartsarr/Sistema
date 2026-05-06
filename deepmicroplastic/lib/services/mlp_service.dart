@@ -4,10 +4,6 @@ import 'package:http/http.dart' as http;
 import '../models/spectrum_model.dart';
 
 class MlpService {
-  // For Android emulator: use 10.0.2.2 (host loopback).
-  // For ADB port-forward on a physical device: run
-  //   adb reverse tcp:8000 tcp:8000
-  // and keep localhost here.
   static const String _baseUrl = 'http://localhost:8000';
 
   static Future<IdentificationResult?> identify(SpectrumSample sample) async {

@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-// IMPORTANTE: Adicione o import da tela de analytics aqui
 import 'dataset_analytics_screen.dart'; 
 
 class DatasetViewerScreen extends StatelessWidget {
@@ -16,9 +15,8 @@ class DatasetViewerScreen extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.all(20),
         children: [
-          // Card 1: Base RAVI (Com navegação)
           _buildDatasetCard(
-            context, // Passamos o context para a navegação funcionar
+            context,
             title: 'Base Multimodal Ravi',
             subtitle: 'Raman & FTIR Spectra',
             samples: '12.450 assinaturas',
@@ -28,7 +26,6 @@ class DatasetViewerScreen extends StatelessWidget {
             destination: const DatasetAnalyticsScreen(), // Tela de destino
           ),
           
-          // Card 2: Kaggle (Exemplo sem navegação ou indo para a mesma tela)
           _buildDatasetCard(
             context,
             title: 'Kaggle Microplastics Open',
@@ -37,14 +34,13 @@ class DatasetViewerScreen extends StatelessWidget {
             tags: ['Visão Computacional', 'YOLOv8'],
             maintainers: 'Comunidade',
             color: Colors.blueAccent,
-            destination: const DatasetAnalyticsScreen(), // Opcional: pode criar outra tela depois
+            destination: const DatasetAnalyticsScreen(), 
           ),
         ],
       ),
     );
   }
 
-  // Atualizamos o método para receber o BuildContext e o Widget de destino
   Widget _buildDatasetCard(
     BuildContext context, {
     required String title, 
@@ -53,7 +49,7 @@ class DatasetViewerScreen extends StatelessWidget {
     required List<String> tags, 
     required String maintainers, 
     required Color color,
-    required Widget destination, // Nova variável para a tela destino
+    required Widget destination, 
   }) {
     return Container(
       margin: const EdgeInsets.only(bottom: 20),
@@ -61,7 +57,6 @@ class DatasetViewerScreen extends StatelessWidget {
         color: Colors.white.withOpacity(0.03),
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: color.withOpacity(0.3)),
-        // Adicionamos uma leve sombra para dar profundidade
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(0.2),
@@ -71,11 +66,10 @@ class DatasetViewerScreen extends StatelessWidget {
         ],
       ),
       child: Material(
-        color: Colors.transparent, // Necessário para o InkWell funcionar com as bordas
+        color: Colors.transparent, 
         child: InkWell(
           borderRadius: BorderRadius.circular(20),
           onTap: () {
-            // Aqui acontece a mágica da navegação
             Navigator.push(
               context, 
               MaterialPageRoute(builder: (context) => destination)

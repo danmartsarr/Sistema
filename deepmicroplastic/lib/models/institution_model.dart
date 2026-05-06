@@ -27,8 +27,7 @@ class InstitutionModel {
         ),
       );
 
-  /// Gera um slug a partir do nome da instituição.
-  /// Ex.: "Universidade de São Paulo" → "universidade-de-sao-paulo".
+  /// "Universidade de São Paulo" → "universidade-de-sao-paulo".
   static String slugify(String name) {
     final lowered = name.toLowerCase().trim();
     final ascii = lowered

@@ -1,14 +1,13 @@
 import 'dart:convert';
 
 class UserModel {
-  /// Tenant the user belongs to. Persisted as the first level of the user path:
   /// `/institutions/<institutionSlug>/users/<username>`.
   final String institutionSlug;
   final String username;
   final String name;
   final String email;
   final String department;
-  final String role; // 'admin' | 'researcher'
+  final String role; 
   final String passwordHash;
   final DateTime createdAt;
 
@@ -71,8 +70,6 @@ class UserModel {
         createdAt:       createdAt,
       );
 
-  // Basic obfuscation for internal lab use.
-  // For production use Firebase Authentication instead.
   static String hashPassword(String password) {
     final bytes = utf8.encode('raviDeepMp_$password');
     return base64.encode(bytes);

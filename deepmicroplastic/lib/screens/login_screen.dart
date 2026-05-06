@@ -103,9 +103,6 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Future<void> _openNewInstitution() async {
     final l = AppLocalizations.of(context);
-    // Quando não há nenhuma instituição (primeira execução), permitimos.
-    // Caso contrário, só admin logado pode criar — então o usuário vai
-    // pelo menu interno após login.
     final created = await Navigator.push<InstitutionModel?>(
       context,
       MaterialPageRoute(
@@ -283,7 +280,6 @@ class _LoginScreenState extends State<LoginScreen> {
       ];
     }
 
-    // askCredentials
     return [
       Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),

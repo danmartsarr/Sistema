@@ -323,8 +323,6 @@ class _FtirOverviewScreenState extends State<FtirOverviewScreen> {
   }
 }
 
-// ── Widgets ───────────────────────────────────────────────────────────────────
-
 class _ErrorView extends StatelessWidget {
   final String message;
   final VoidCallback onRetry;
@@ -488,8 +486,6 @@ class _DatasetCard extends StatelessWidget {
                       loggedUser: loggedUser,
                     )),
           );
-          // Recarrega ao voltar — garante que contadores e KPIs reflitam
-          // alterações (novas amostras, deletes, identificações).
           onUpdate();
         },
         onLongPress:

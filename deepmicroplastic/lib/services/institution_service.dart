@@ -30,8 +30,7 @@ class InstitutionService {
     return out;
   }
 
-  /// Creates the institution metadata + the initial admin in a single call.
-  /// Used by both the first-run flow and admin-only registration.
+
   static Future<bool> createWithAdmin({
     required InstitutionModel institution,
     required UserModel admin,

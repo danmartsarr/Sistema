@@ -3,12 +3,6 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import '../models/spectrum_model.dart';
 
-/// Persists and retrieves spectral data via the MLP server, in CSV files
-/// scoped per institution and per dataset.
-///
-/// Server keeps `spectra_data/<institutionSlug>/<datasetId>.csv` where the
-/// first column is `sampleId` and the others are intensities indexed by
-/// wavenumbers (CSV header).
 class SpectralStorageService {
   static const String _baseUrl = 'http://localhost:8000';
 

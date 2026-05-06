@@ -24,8 +24,6 @@ class SampleService {
     return results;
   }
 
-  /// Loads the persisted spectrum (CSV on the server) and injects it into the sample.
-  /// Returns the same instance for chaining.
   static Future<SpectrumSample> hydrateSpectrum(
     SpectrumSample sample,
     String institutionSlug,
@@ -54,7 +52,7 @@ class SampleService {
         (v) => v.name == m['dataType'],
         orElse: () => DataType.absorbance,
       ),
-      spectralData: const [], // hydrated on demand via SpectralStorageService
+      spectralData: const [], 
       result: result,
       notes: (m['notes'] as String?) ?? '',
       isVerified: (m['isVerified'] as bool?) ?? false,

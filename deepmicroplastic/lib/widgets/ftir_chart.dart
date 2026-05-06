@@ -3,22 +3,22 @@ import 'package:flutter/material.dart';
 import '../l10n/app_localizations.dart';
 import '../models/spectrum_model.dart';
 
-// ── Constants ────────────────────────────────────────────────────────────────
-const double _leftPad   = 66;  // aumentado para dar espaço ao label do eixo Y
+//Constants 
+const double _leftPad   = 66;  
 const double _rightPad  = 16;
 const double _topPad    = 16;
 const double _bottomPad = 44;
 const double _wnMin     = 400;
 const double _wnMax     = 4000;
 
-// ── Coordinate helpers ───────────────────────────────────────────────────────
+//Coordinate helpers 
 double _wnToX(double wn, double chartW) =>
     _leftPad + (_wnMax - wn) / (_wnMax - _wnMin) * chartW;
 
 double _intToY(double intensity, double maxI, double chartH) =>
     _topPad + chartH - (intensity / maxI) * chartH;
 
-// ── Painter ──────────────────────────────────────────────────────────────────
+//Painter
 class _FtirPainter extends CustomPainter {
   final List<SpectralPoint> spectralData;
   final List<AttentionPoint>? attentionMap;
@@ -44,7 +44,7 @@ class _FtirPainter extends CustomPainter {
     final chartH = size.height - _topPad - _bottomPad;
     final maxI   = spectralData.map((p) => p.intensity).reduce((a, b) => a > b ? a : b);
 
-    // 1. Attention heatmap ──────────────────────────────────────────────────
+    // 1. Attention heatmap
     if (attentionMap != null && attentionMap!.length > 1) {
       for (int i = 0; i < attentionMap!.length - 1; i++) {
         final ap  = attentionMap![i];
@@ -66,7 +66,7 @@ class _FtirPainter extends CustomPainter {
       }
     }
 
-    // 2. Grid lines ─────────────────────────────────────────────────────────
+    // 2. Grid lines 
     final gridPaint = Paint()
       ..color = Colors.white.withValues(alpha: 0.06)
       ..strokeWidth = 1;
@@ -84,7 +84,6 @@ class _FtirPainter extends CustomPainter {
       final val = maxI * i / ySteps;
       final y   = _intToY(val, maxI, chartH);
       canvas.drawLine(Offset(_leftPad, y), Offset(_leftPad + chartW, y), gridPaint);
-      // números alinhados à direita, terminando a 4px do eixo
       final numTp = TextPainter(
         text: TextSpan(text: val.toStringAsFixed(2), style: tickStyle),
         textDirection: TextDirection.ltr,
@@ -104,11 +103,11 @@ class _FtirPainter extends CustomPainter {
       TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 11),
     );
 
-    // 3. Clip to chart area ─────────────────────────────────────────────────
+    // 3. Clip to chart area 
     canvas.save();
     canvas.clipRect(Rect.fromLTWH(_leftPad, _topPad, chartW, chartH));
 
-    // 4. Spectrum fill ──────────────────────────────────────────────────────
+    // 4. Spectrum fill 
     final fillPath = Path();
     bool firstFill = true;
     for (final p in spectralData) {
@@ -138,7 +137,7 @@ class _FtirPainter extends CustomPainter {
         ),
     );
 
-    // 5. Spectrum line ──────────────────────────────────────────────────────
+    // 5. Spectrum line 
     final linePath = Path();
     bool firstLine = true;
     for (final p in spectralData) {
@@ -157,7 +156,7 @@ class _FtirPainter extends CustomPainter {
         ..strokeJoin = StrokeJoin.round,
     );
 
-    // 6. Decision marker ────────────────────────────────────────────────────
+    // 6. Decision marker 
     if (decisionWavenumber != null) {
       final dx = _wnToX(decisionWavenumber!, chartW);
       _drawDashedLine(
@@ -175,7 +174,7 @@ class _FtirPainter extends CustomPainter {
 
     canvas.restore();
 
-    // 7. Crosshair + tooltip ────────────────────────────────────────────────
+    // 7. Crosshair + tooltip 
     if (crosshair != null) {
       final cx = crosshair!.dx.clamp(_leftPad, _leftPad + chartW);
       canvas.drawLine(
@@ -202,7 +201,7 @@ class _FtirPainter extends CustomPainter {
       }
     }
 
-    // 8. Axes border ────────────────────────────────────────────────────────
+    // 8. Axes border 
     final axisPaint = Paint()
       ..color = Colors.white.withValues(alpha: 0.2)
       ..strokeWidth = 1;
@@ -269,7 +268,7 @@ class _FtirPainter extends CustomPainter {
       old.decisionWavenumber != decisionWavenumber;
 }
 
-// ── Public Widget ─────────────────────────────────────────────────────────────
+// Public Widget 
 class FtirChart extends StatefulWidget {
   final SpectrumSample sample;
   final bool showAttention;

@@ -1,9 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// Persists the user's UI language across launches.
-///
-/// Default is English; user can switch to Portuguese via the in-app menu.
+
 class LocaleService extends ChangeNotifier {
   static const _prefsKey = 'app_locale';
   static const supported = [Locale('en'), Locale('pt')];

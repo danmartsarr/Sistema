@@ -11,11 +11,8 @@ class ImportCsvScreen extends StatefulWidget {
   final SpectrumDataset dataset;
   final UserModel loggedUser;
 
-  /// Default collection site shared by all imported samples. Inherited from
-  /// the batch registration form when applicable.
   final String? defaultSite;
 
-  /// Shared notes. Replace the default "Identified..." text when filled.
   final String? defaultNotes;
 
   const ImportCsvScreen({
@@ -79,8 +76,6 @@ class _ImportCsvScreenState extends State<ImportCsvScreen> {
     int saved = 0;
 
     for (final r in _results) {
-      // Random traceable ID — never derived from CSV name. Original CSV name
-      // is recorded in notes for traceability.
       final id          = SampleIdGenerator.generateInternalId();
       final displayName = SampleIdGenerator.generateName(widget.dataset.name);
       final traceLine   = 'CSV row ${r.row + 1} • source: ${r.originalCsvName}';
