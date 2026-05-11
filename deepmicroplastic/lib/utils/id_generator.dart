@@ -1,22 +1,20 @@
 import 'dart:math';
 
-/// Gera identificadores curtos, aleatórios e rastreáveis para amostras.
+/// Short, random, traceable sample identifiers.
 ///
-/// Formato: `<PREFIX>-<6 chars alfanuméricos>`  (ex.: `PF-X7K2N9`).
-/// Espaço amostral: 36^6 ≈ 2,17 bilhões — colisão desprezível para
-/// escalas típicas de pesquisa.
+/// Format: `<PREFIX>-<6 alphanumeric chars>` (e.g. `PF-X7K2N9`).
+/// Sample space: 36^6 ≈ 2.17 billion — collision probability negligible at research scale.
 class SampleIdGenerator {
   static final _rand     = Random.secure();
-  static const _alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // sem 0/O/1/I
+  static const _alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no 0/O/1/I
 
-  /// Gera o nome visível da amostra a partir do nome do dataset.
-  /// O prefixo são as iniciais (até 2) das primeiras palavras significativas.
+  /// Generates the visible sample name from the dataset name (up to 2 initials as prefix).
   static String generateName(String datasetName) {
     final prefix = _prefixFromDataset(datasetName);
     return '$prefix-${_randomSuffix(6)}';
   }
 
-  /// Gera o ID interno (Firebase). Único por amostra independentemente do dataset.
+  /// Generates the internal Firebase ID, unique per sample regardless of dataset.
   static String generateInternalId() => 'smp-${_randomSuffix(12).toLowerCase()}';
 
   static String _prefixFromDataset(String name) {

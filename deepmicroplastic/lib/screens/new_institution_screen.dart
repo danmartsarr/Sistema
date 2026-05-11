@@ -4,6 +4,7 @@ import '../models/institution_model.dart';
 import '../models/user_model.dart';
 import '../services/institution_service.dart';
 
+/// Registration form for a new institution and its first admin account.
 class NewInstitutionScreen extends StatefulWidget {
   final bool firstRun;
   const NewInstitutionScreen({super.key, this.firstRun = false});

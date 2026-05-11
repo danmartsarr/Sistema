@@ -4,6 +4,7 @@ import '../models/spectrum_model.dart';
 import '../models/user_model.dart';
 import '../services/dataset_service.dart';
 
+/// Form to create a new dataset within the logged user's institution.
 class AddDatasetScreen extends StatefulWidget {
   final UserModel loggedUser;
   const AddDatasetScreen({super.key, required this.loggedUser});

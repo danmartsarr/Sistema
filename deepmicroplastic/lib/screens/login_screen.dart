@@ -7,6 +7,10 @@ import '../widgets/language_menu.dart';
 import 'ftir_overview_screen.dart';
 import 'new_institution_screen.dart';
 
+/// Entry screen that guides the user through institution lookup → login.
+///
+/// On first run (no institutions in Firebase) it redirects to [NewInstitutionScreen]
+/// to create the first admin account.
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
 

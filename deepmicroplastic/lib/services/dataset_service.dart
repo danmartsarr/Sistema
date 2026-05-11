@@ -1,6 +1,9 @@
 import '../models/spectrum_model.dart';
 import 'firebase_service.dart';
 
+/// CRUD operations for [SpectrumDataset] records stored in Firebase.
+///
+/// Deleting a dataset also removes all associated samples to avoid orphans.
 class DatasetService {
   static String _datasetsPath(String institutionSlug) =>
       'institutions/$institutionSlug/datasets';

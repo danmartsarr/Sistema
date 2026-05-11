@@ -7,6 +7,10 @@ import '../services/sample_service.dart';
 import '../widgets/ftir_chart.dart';
 import 'add_sample_screen.dart';
 
+/// Shows the FTIR chart, MLP identification result, and metadata for a sample.
+///
+/// Triggers spectrum hydration on load if [SpectrumSample.spectralData] is empty,
+/// and allows re-running the MLP analysis.
 class SampleDetailScreen extends StatefulWidget {
   final SpectrumSample sample;
   final SpectrumDataset dataset;

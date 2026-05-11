@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-
+/// Manages the app locale and persists the user's language choice.
+///
+/// Extend [supported] to add new languages; the delegate list in [main.dart]
+/// must also be updated.
 class LocaleService extends ChangeNotifier {
   static const _prefsKey = 'app_locale';
   static const supported = [Locale('en'), Locale('pt')];

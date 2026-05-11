@@ -55,18 +55,22 @@ extension MicroscopeModeLabel on MicroscopeMode {
   }
 }
 
+/// A single (wavenumber cm⁻¹, intensity) pair in an FTIR spectrum.
 class SpectralPoint {
   final double wavenumber;
   final double intensity;
   const SpectralPoint(this.wavenumber, this.intensity);
 }
 
+/// Gradient-saliency value at a given wavenumber, used to highlight
+/// spectral regions that most influenced the model's prediction (0–1).
 class AttentionPoint {
   final double wavenumber;
   final double attention;
   const AttentionPoint(this.wavenumber, this.attention);
 }
 
+/// Output produced by the MLP server for a single spectrum.
 class IdentificationResult {
   final PolymerType polymer;
   final double confidence;
@@ -85,7 +89,11 @@ class IdentificationResult {
   });
 }
 
-// Parâmetros de calibração/equipamento ficam no SpectrumDataset.
+/// A single microplastic sample with its metadata and FTIR spectrum.
+///
+/// Instrument/calibration parameters are stored in the parent [SpectrumDataset].
+/// [spectralData] is lazy-loaded — it is empty when fetched from Firebase and
+/// must be populated via [SampleService.hydrateSpectrum] before use.
 class SpectrumSample {
   final String id;
   String name;
@@ -111,6 +119,7 @@ class SpectrumSample {
     this.verifiedBy = '',
   });
 
+  /// Converts to transmittance using an approximate Beer–Lambert inversion.
   List<SpectralPoint> get asTransmittance {
     if (dataType == DataType.transmittance) return spectralData;
     return spectralData
@@ -118,6 +127,7 @@ class SpectrumSample {
         .toList();
   }
 
+  /// Converts to absorbance. The MLP server always expects absorbance input.
   List<SpectralPoint> get asAbsorbance {
     if (dataType == DataType.absorbance) return spectralData;
     return spectralData
@@ -126,6 +136,7 @@ class SpectrumSample {
   }
 }
 
+/// A collection of [SpectrumSample]s captured under the same instrument setup.
 class SpectrumDataset {
   final String id;
   String name;

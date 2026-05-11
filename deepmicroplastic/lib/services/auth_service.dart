@@ -1,6 +1,7 @@
 import '../models/user_model.dart';
 import 'firebase_service.dart';
 
+/// Handles authentication and user management within an institution's namespace.
 class AuthService {
   static String _userPath(String institutionSlug, String username) =>
       'institutions/$institutionSlug/users/$username';

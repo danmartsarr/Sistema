@@ -3,6 +3,7 @@ import '../l10n/app_localizations.dart';
 import '../models/user_model.dart';
 import '../services/auth_service.dart';
 
+/// Form to create or edit a user account within an institution.
 class UserFormScreen extends StatefulWidget {
   final String institutionSlug;
   final UserModel? existing;

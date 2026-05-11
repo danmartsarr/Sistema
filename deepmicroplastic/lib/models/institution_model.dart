@@ -1,3 +1,7 @@
+/// A research institution that owns datasets and users in the system.
+///
+/// The [slug] is derived from the institution's name via [slugify] and serves
+/// as the Firebase namespace key (e.g. `'universidade-de-sao-paulo'`).
 class InstitutionModel {
   final String slug;
   final String name;
@@ -27,7 +31,7 @@ class InstitutionModel {
         ),
       );
 
-  /// "Universidade de São Paulo" → "universidade-de-sao-paulo".
+  /// e.g. "Universidade de São Paulo" → "universidade-de-sao-paulo".
   static String slugify(String name) {
     final lowered = name.toLowerCase().trim();
     final ascii = lowered

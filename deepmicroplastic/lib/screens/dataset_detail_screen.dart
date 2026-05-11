@@ -7,6 +7,8 @@ import 'import_csv_screen.dart';
 import 'sample_detail_screen.dart';
 import 'add_sample_screen.dart';
 
+/// Lists and filters samples in a dataset, with entry points to add samples
+/// individually or via CSV batch import.
 class DatasetDetailScreen extends StatefulWidget {
   final SpectrumDataset dataset;
   final UserModel loggedUser;

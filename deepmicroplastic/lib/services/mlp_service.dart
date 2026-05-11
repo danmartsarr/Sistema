@@ -3,6 +3,10 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import '../models/spectrum_model.dart';
 
+/// Sends a single spectrum to the MLP inference server and parses the result.
+///
+/// Gradient-based saliency (attention map) and per-polymer spectral peak
+/// descriptions are returned alongside the polymer prediction.
 class MlpService {
   static const String _baseUrl = 'http://localhost:8000';
 

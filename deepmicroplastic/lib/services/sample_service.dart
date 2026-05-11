@@ -2,6 +2,12 @@ import '../models/spectrum_model.dart';
 import 'firebase_service.dart';
 import 'spectral_storage_service.dart';
 
+/// CRUD operations for [SpectrumSample] records.
+///
+/// Metadata is stored in Firebase; spectral data (wavenumbers + intensities)
+/// is stored separately on the MLP server via [SpectralStorageService].
+/// Samples loaded from Firebase have an empty [SpectrumSample.spectralData]
+/// until [hydrateSpectrum] is called.
 class SampleService {
   static String _samplesPath(String institutionSlug) =>
       'institutions/$institutionSlug/samples';
@@ -24,6 +30,9 @@ class SampleService {
     return results;
   }
 
+  /// Fetches spectral data from the MLP server and attaches it to [sample].
+  ///
+  /// No-ops if [sample.spectralData] is already populated.
   static Future<SpectrumSample> hydrateSpectrum(
     SpectrumSample sample,
     String institutionSlug,

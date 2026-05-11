@@ -11,6 +11,8 @@ import 'login_screen.dart';
 import 'manage_institutions_screen.dart';
 import 'manage_users_screen.dart';
 
+/// Home screen shown after login. Displays the institution's dataset list
+/// and provides navigation to dataset details, user management, and settings.
 class FtirOverviewScreen extends StatefulWidget {
   final UserModel loggedUser;
   const FtirOverviewScreen({super.key, required this.loggedUser});
@@ -39,8 +41,7 @@ class _FtirOverviewScreenState extends State<FtirOverviewScreen> {
     });
     try {
       final datasets = await DatasetService.loadAll(_slug);
-      // Carrega contagens de amostras (para os KPIs e cards) — sem espectro,
-      // só metadados.
+      // Load sample counts for KPIs — metadata only, no spectral data.
       for (final ds in datasets) {
         final samples = await SampleService.loadForDataset(_slug, ds.id);
         ds.samples
@@ -193,8 +194,7 @@ class _FtirOverviewScreenState extends State<FtirOverviewScreen> {
                     AddDatasetScreen(loggedUser: widget.loggedUser)),
           );
           if (newDataset != null) {
-            // Recarrega completo do Firebase para garantir consistência
-            // (em vez de só inserir em memória).
+            // Full reload from Firebase to stay consistent instead of patching in-memory.
             await _loadDatasets();
           }
         },

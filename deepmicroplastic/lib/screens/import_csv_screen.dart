@@ -7,6 +7,7 @@ import '../services/csv_import_service.dart';
 import '../services/sample_service.dart';
 import '../utils/id_generator.dart';
 
+/// Batch-imports samples from a CSV file via the MLP server's `/predict_csv` endpoint.
 class ImportCsvScreen extends StatefulWidget {
   final SpectrumDataset dataset;
   final UserModel loggedUser;

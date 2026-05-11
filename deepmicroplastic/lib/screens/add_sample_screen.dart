@@ -8,6 +8,7 @@ import '../services/sample_service.dart';
 import '../utils/id_generator.dart';
 import 'import_csv_screen.dart';
 
+/// Form to add or edit a single spectrum sample; can also route to CSV batch import.
 class AddSampleScreen extends StatefulWidget {
   final SpectrumSample? existing;
   final SpectrumDataset? dataset;

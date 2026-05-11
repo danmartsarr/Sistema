@@ -3,6 +3,11 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import '../models/spectrum_model.dart';
 
+/// Persists and retrieves raw spectral data (wavenumbers + intensities) via
+/// the MLP server's `/spectra` endpoints.
+///
+/// Each dataset's spectra are stored in a CSV file on the server, indexed by
+/// `sample_id`. This keeps large float arrays out of Firebase.
 class SpectralStorageService {
   static const String _baseUrl = 'http://localhost:8000';
 

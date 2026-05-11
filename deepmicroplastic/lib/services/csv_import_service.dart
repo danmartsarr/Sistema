@@ -2,12 +2,10 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../models/spectrum_model.dart';
 
-/// Resultado de uma linha do CSV processada pelo servidor.
+/// Result for a single CSV row processed by the server.
 ///
-/// `originalCsvName` preserva o nome retornado pelo servidor (vem da coluna
-/// "name"/"sample" do CSV) — usado apenas como rastreabilidade. O ID que
-/// identifica a amostra no sistema é gerado aleatoriamente na importação,
-/// não é derivado dele.
+/// `originalCsvName` is the name from the server's "name"/"sample" column —
+/// kept for traceability only. The system ID is generated randomly on import.
 class CsvSampleResult {
   final int row;
   final String originalCsvName;
@@ -25,11 +23,10 @@ class CsvSampleResult {
 class CsvImportService {
   static const String _baseUrl = 'http://localhost:8000';
 
-  /// Envia o arquivo CSV para o servidor e retorna as predições por linha.
+  /// Uploads the CSV to the server and returns per-row predictions.
   ///
-  /// O servidor remove automaticamente colunas categóricas — o CSV pode
-  /// conter colunas como "name", "sample", "interpretation", etc. sem
-  /// pré-processamento manual.
+  /// Categorical columns (name, sample, interpretation, etc.) are stripped
+  /// server-side — no manual preprocessing required.
   static Future<List<CsvSampleResult>> predictFromCsv(
     String filePath,
     String fileName,

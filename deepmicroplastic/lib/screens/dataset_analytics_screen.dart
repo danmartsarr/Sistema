@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'dart:ui';
 
+/// Placeholder analytics dashboard showing mock statistics for a dataset.
 class DatasetAnalyticsScreen extends StatelessWidget {
   const DatasetAnalyticsScreen({super.key});
 
@@ -110,7 +111,7 @@ class DatasetAnalyticsScreen extends StatelessWidget {
                       ],
                     ),
                   ),
-                  const SizedBox(height: 40), // Espaço no final
+                  const SizedBox(height: 40),
                 ],
               ),
             ),

@@ -1,6 +1,10 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 
+/// Thin REST wrapper around Firebase Realtime Database.
+///
+/// All paths are relative to the project database root and must NOT include
+/// the leading slash (e.g. `'institutions/usp/users/alice'`).
 class FirebaseService {
   static const String _base =
       'https://deepmicroplastics-default-rtdb.firebaseio.com';

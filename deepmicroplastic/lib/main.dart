@@ -12,6 +12,7 @@ Future<void> main() async {
   runApp(const RaviApp());
 }
 
+/// Root widget. Rebuilds when [localeService] changes to apply the new locale.
 class RaviApp extends StatelessWidget {
   const RaviApp({super.key});
 

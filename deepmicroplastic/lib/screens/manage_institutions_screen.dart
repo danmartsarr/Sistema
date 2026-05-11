@@ -5,6 +5,7 @@ import '../models/user_model.dart';
 import '../services/institution_service.dart';
 import 'new_institution_screen.dart';
 
+/// Admin screen to list, add, and delete institutions.
 class ManageInstitutionsScreen extends StatefulWidget {
   final UserModel loggedUser;
   const ManageInstitutionsScreen({super.key, required this.loggedUser});

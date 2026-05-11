@@ -1,7 +1,11 @@
 import 'dart:convert';
 
+/// A user account scoped to a single institution.
+///
+/// Stored at `/institutions/<institutionSlug>/users/<username>` in Firebase.
+/// Passwords are never stored in plain text — see [hashPassword].
 class UserModel {
-  /// `/institutions/<institutionSlug>/users/<username>`.
+  /// Firebase path prefix for this user's node.
   final String institutionSlug;
   final String username;
   final String name;

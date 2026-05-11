@@ -4,6 +4,7 @@ import '../models/user_model.dart';
 import '../services/auth_service.dart';
 import 'user_form_screen.dart';
 
+/// Admin screen to list, add, edit, and delete users within an institution.
 class ManageUsersScreen extends StatefulWidget {
   final UserModel loggedUser;
   const ManageUsersScreen({super.key, required this.loggedUser});

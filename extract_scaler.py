@@ -20,7 +20,7 @@ if len(sys.argv) < 2:
 csv_path = sys.argv[1]
 df = pd.read_csv(csv_path)
 
-# 1. Limpeza de Classes (exatamente como no Colab)[cite: 2]
+# 1. Class cleanup (mirrors Colab preprocessing)
 df['Interpretation'] = df['Interpretation'].astype(str).str.strip()
 label_map = {
     'PE':'PE', 'PE_like':'PE', 'PEfouling':'PE',
@@ -31,23 +31,23 @@ label_map = {
 df = df[df['Interpretation'].isin(label_map)].copy()
 df['label'] = df['Interpretation'].map(label_map)
 
-# 2. Separação de X e Y (ignorando as colunas corretas)[cite: 2]
+# 2. Split X and Y (drop non-feature columns)
 y = LabelEncoder().fit_transform(df['label'])
 X_raw = df.drop(columns=['Sample','Interpretation','label'], errors='ignore')
 
 print(f"Full real dataset shape: {X_raw.shape}")
 
-# 3. Recriação EXATA do Split de Treino (usando a mesma SEED)[cite: 2]
+# 3. Reproduce training split (same seed)
 SEED = 42
 idx = np.arange(len(y))
 idx_trval, idx_test = train_test_split(idx, test_size=0.15, stratify=y, random_state=SEED)
 idx_train, idx_val  = train_test_split(idx_trval, test_size=0.1765, stratify=y[idx_trval], random_state=SEED)
 
-# 4. Ajuste do Scaler APENAS nos dados de treino[cite: 2]
+# 4. Fit scaler on training data
 scaler = MinMaxScaler()
 scaler.fit(X_raw.iloc[idx_train])
 
-# 5. Exportação do JSON
+# 5. Export JSON
 out_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "scaler_params.json")
 with open(out_path, "w") as f:
     json.dump({

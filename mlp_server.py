@@ -1,25 +1,18 @@
 """
 DeepMicroplastic MLP Inference Server
 
-Run with:
-    /path/to/venv/python mlp_server.py
+Run: /path/to/venv/python mlp_server.py
 
 Endpoints:
-  GET  /health                       — status + class list
-  POST /predict                      — JSON body: {wavenumbers, intensities}
-  POST /predict_csv                  — multipart upload: CSV (linha = amostra)
+  GET    /health
+  POST   /predict                              — {wavenumbers, intensities}
+  POST   /predict_csv                          — multipart CSV upload
   POST   /spectra/{institution_slug}/{dataset_id}
-                                     — JSON: {sample_id, wavenumbers, intensities}
-                                       Persiste o espectro num CSV do dataset.
   GET    /spectra/{institution_slug}/{dataset_id}/{sample_id}
-                                     — Lê o espectro persistido por ID.
   DELETE /spectra/{institution_slug}/{dataset_id}/{sample_id}
-                                     — Remove a linha do espectro.
 
-Preprocessing:
-  O modelo foi treinado com MinMaxScaler ajustado nos dados sintéticos.
-  Para precisão ótima, gere scaler_params.json com extract_scaler.py.
-  Sem ele, normalização per-amostra é usada como fallback.
+Scaler: generate scaler_params.json with extract_scaler.py for best accuracy;
+        falls back to per-sample normalization if missing.
 """
 
 import io
@@ -55,25 +48,20 @@ if os.path.exists(SCALER_PATH):
     scaler_max = np.array(params["max"], dtype=np.float32)
     print(f"Scaler loaded from {SCALER_PATH}.")
 else:
-    print("WARNING: scaler_params.json not found — usando normalização per-amostra.")
+    print("WARNING: scaler_params.json not found — falling back to per-sample normalization.")
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 CLASS_NAMES = ["EVA", "PA", "PE", "PP", "PS", "cellulose_like"]
 
-# Grade de números de onda: 1763 pontos de 3998 a 600 cm⁻¹
 WAVENUMBERS = np.linspace(3998, 600, 1763, dtype=np.float32)
-
-# Downsampling da atenção (~200 pontos)
 ATTN_STEP = max(1, len(WAVENUMBERS) // 200)
-
-# Downsampling do espectro para visualização (~500 pontos)
 SPEC_STEP = max(1, len(WAVENUMBERS) // 500)
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _normalize(spectrum: np.ndarray) -> np.ndarray:
-    """Aplica MinMaxScaler de treino (se disponível) ou normalização per-amostra."""
+    """MinMaxScaler from training data, or per-sample fallback."""
     if scaler_min is not None and scaler_max is not None:
         scale = scaler_max - scaler_min
         scale[scale == 0] = 1.0
@@ -85,11 +73,11 @@ def _normalize(spectrum: np.ndarray) -> np.ndarray:
 
 
 def _interpolate(wn: np.ndarray, inten: np.ndarray) -> np.ndarray:
-    """Interpola (wn, inten) para a grade do modelo (WAVENUMBERS, 3998→600)."""
+    """Interpolate (wn, inten) onto the model grid (3998→600 cm⁻¹)."""
     order   = np.argsort(wn)
     wn_s    = wn[order]
     inten_s = inten[order]
-    # np.interp precisa de xp crescente; WAVENUMBERS é decrescente, então usamos reverso
+    # np.interp requires ascending xp; WAVENUMBERS is descending, so reverse
     result = np.interp(
         WAVENUMBERS[::-1], wn_s, inten_s,
         left=float(inten_s[0]), right=float(inten_s[-1]),
@@ -98,10 +86,7 @@ def _interpolate(wn: np.ndarray, inten: np.ndarray) -> np.ndarray:
 
 
 def _infer(spectrum_norm: np.ndarray, spectrum_original: np.ndarray) -> dict:
-    """
-    Modificado para receber também o espectro original e retornar tudo alinhado
-    para a interface do Flutter sem downsampling.
-    """
+    """Run inference and return prediction with saliency map."""
     x = tf.Variable(spectrum_norm.reshape(1, -1), dtype=tf.float32)
     with tf.GradientTape() as tape:
         probs = model(x, training=False)
@@ -126,15 +111,11 @@ def _infer(spectrum_norm: np.ndarray, spectrum_original: np.ndarray) -> dict:
         "confidence":    float(probs_np[idx]),
         "wavenumbers":   WAVENUMBERS.tolist(),     
         "intensities":   spectrum_original.tolist(),
-        "attention":     attention_list  # Agora é uma lista de mapas!
+        "attention":     attention_list,
     }
 
 def _extract_spectral_columns(df: pd.DataFrame) -> tuple[list[str], list[float]]:
-    """
-    Detecta as colunas espectrais: aquelas cujo cabeçalho pode ser convertido
-    para float (i.e., são números de onda). Retorna (col_names, wavenumbers).
-    Colunas categóricas (name, sample, interpretation, etc.) são ignoradas.
-    """
+    """Return (col_names, wavenumbers) for columns with numeric headers."""
     spectral_cols = []
     wavenumbers   = []
     for col in df.columns:
@@ -148,7 +129,7 @@ def _extract_spectral_columns(df: pd.DataFrame) -> tuple[list[str], list[float]]
 
 
 def _find_name_column(df: pd.DataFrame) -> str | None:
-    """Procura coluna de nome da amostra por convenção de nome."""
+    """Return the sample-name column if present, else None."""
     candidates = ["name", "sample", "id", "amostra", "sample_id", "specimen"]
     for col in df.columns:
         if col.strip().lower() in candidates:
@@ -181,7 +162,7 @@ class SpectrumStoreRequest(BaseModel):
 def _safe_segment(value: str, label: str) -> str:
     safe = "".join(c for c in value if c.isalnum() or c in "-_")
     if not safe:
-        raise HTTPException(status_code=400, detail=f"{label} inválido")
+        raise HTTPException(status_code=400, detail=f"Invalid {label}")
     return safe
 
 
@@ -197,6 +178,7 @@ def _spectra_csv_path(institution_slug: str, dataset_id: str) -> str:
 
 @app.get("/health")
 def health():
+    """Server status, class list, and scaler config."""
     return {
         "status":     "ok",
         "classes":    CLASS_NAMES,
@@ -207,7 +189,7 @@ def health():
 
 @app.post("/predict")
 def predict(req: PredictRequest):
-    """Predição para uma única amostra via JSON."""
+    """Predict a single sample."""
     wn    = np.array(req.wavenumbers, dtype=np.float32)
     inten = np.array(req.intensities, dtype=np.float32)
 
@@ -218,38 +200,24 @@ def predict(req: PredictRequest):
 
 @app.post("/predict_csv")
 async def predict_csv(file: UploadFile = File(...)):
-    """
-    Predição em lote a partir de um arquivo CSV.
-
-    Formato esperado:
-      - Cada linha = uma amostra
-      - Colunas com cabeçalho numérico (ex.: '600.0', '3998.0') = intensidades
-      - Colunas categóricas (name, sample, interpretation, etc.) são removidas
-        automaticamente — não é necessário pré-processar o CSV antes de enviar
-
-    Retorna lista de resultados, um por linha do CSV.
-    """
+    """Batch prediction from a CSV file (one sample per row, numeric headers = wavenumbers)."""
     if not file.filename.endswith(".csv"):
-        raise HTTPException(status_code=400, detail="Arquivo deve ser .csv")
+        raise HTTPException(status_code=400, detail="File must be .csv")
 
     content = await file.read()
     try:
         df = pd.read_csv(io.StringIO(content.decode("utf-8")))
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Erro ao ler CSV: {e}")
+        raise HTTPException(status_code=400, detail=f"Failed to read CSV: {e}")
 
     if df.empty:
-        raise HTTPException(status_code=400, detail="CSV vazio")
+        raise HTTPException(status_code=400, detail="Empty CSV")
 
     spectral_cols, wavenumbers = _extract_spectral_columns(df)
     if len(spectral_cols) < 10:
         raise HTTPException(
             status_code=400,
-            detail=(
-                f"Apenas {len(spectral_cols)} coluna(s) com cabeçalho numérico "
-                "encontrada(s). Verifique se o CSV tem os números de onda como "
-                "cabeçalho de coluna."
-            ),
+            detail=f"Only {len(spectral_cols)} numeric column(s) found. Check that wavenumbers are column headers.",
         )
 
     name_col   = _find_name_column(df)
@@ -259,21 +227,17 @@ async def predict_csv(file: UploadFile = File(...)):
     for row_idx, row in df.iterrows():
         inten = row[spectral_cols].values.astype(np.float32)
 
-        # Espectro interpolado para grade do modelo
         spectrum = _interpolate(wn_arr, inten)
         norm     = _normalize(spectrum)
         pred     = _infer(norm, spectrum)
 
-        # Dados espectrais originais (downsampled para o gráfico)
         step = max(1, len(spectral_cols) // 500)
         spectral_data = [
             {"wavenumber": float(wn_arr[i]), "intensity": float(inten[i])}
             for i in range(0, len(spectral_cols), step)
         ]
 
-        sample_name = (
-            str(row[name_col]) if name_col else f"Amostra {int(row_idx) + 1}"
-        )
+        sample_name = str(row[name_col]) if name_col else f"Sample {int(row_idx) + 1}"
 
         results.append({
             "row":          int(row_idx),
@@ -286,19 +250,12 @@ async def predict_csv(file: UploadFile = File(...)):
 
 
 # ── Spectra storage ───────────────────────────────────────────────────────────
-#
-# Cada dataset tem um CSV próprio em spectra_data/<dataset_id>.csv.
-# A primeira coluna é o sample_id; as demais são números de onda (header).
-# Lookup é feito lendo o CSV e filtrando pela primeira coluna.
 
 @app.post("/spectra/{institution_slug}/{dataset_id}")
 def save_spectrum(institution_slug: str, dataset_id: str, req: SpectrumStoreRequest):
-    """Acrescenta (ou substitui) o espectro de uma amostra no CSV do dataset."""
+    """Upsert a spectrum into the dataset CSV."""
     if len(req.wavenumbers) != len(req.intensities):
-        raise HTTPException(
-            status_code=400,
-            detail="wavenumbers e intensities devem ter o mesmo tamanho",
-        )
+        raise HTTPException(status_code=400, detail="wavenumbers and intensities must have the same length")
 
     path = _spectra_csv_path(institution_slug, dataset_id)
     new_row = pd.DataFrame(
@@ -308,13 +265,11 @@ def save_spectrum(institution_slug: str, dataset_id: str, req: SpectrumStoreRequ
 
     if os.path.exists(path):
         existing = pd.read_csv(path)
-        # Remove linha existente com mesmo sample_id (overwrite idempotente)
         existing = existing[existing["sample_id"].astype(str) != req.sample_id]
-        # Alinha colunas — se o header diferir, prevalece o existente
         if list(existing.columns) == list(new_row.columns):
             df = pd.concat([existing, new_row], ignore_index=True)
         else:
-            # Header diferente: realinhamos pelo header existente via interpolação
+            # Header mismatch: re-interpolate onto existing wavenumber grid
             wn_existing = np.array([float(c) for c in existing.columns[1:]],
                                    dtype=np.float32)
             wn_new      = np.array(req.wavenumbers, dtype=np.float32)
@@ -339,15 +294,15 @@ def save_spectrum(institution_slug: str, dataset_id: str, req: SpectrumStoreRequ
 
 @app.get("/spectra/{institution_slug}/{dataset_id}/{sample_id}")
 def load_spectrum(institution_slug: str, dataset_id: str, sample_id: str):
-    """Retorna o espectro persistido (wavenumbers + intensities) por ID."""
+    """Return stored spectrum by sample ID."""
     path = _spectra_csv_path(institution_slug, dataset_id)
     if not os.path.exists(path):
-        raise HTTPException(status_code=404, detail="dataset sem espectros salvos")
+        raise HTTPException(status_code=404, detail="No spectra saved for this dataset")
 
     df = pd.read_csv(path)
     match = df[df["sample_id"].astype(str) == sample_id]
     if match.empty:
-        raise HTTPException(status_code=404, detail="sample_id não encontrado")
+        raise HTTPException(status_code=404, detail="sample_id not found")
 
     row = match.iloc[0]
     wavenumbers = [float(c) for c in df.columns[1:]]
@@ -361,6 +316,7 @@ def load_spectrum(institution_slug: str, dataset_id: str, sample_id: str):
 
 @app.delete("/spectra/{institution_slug}/{dataset_id}/{sample_id}")
 def delete_spectrum(institution_slug: str, dataset_id: str, sample_id: str):
+    """Delete a spectrum row from the dataset CSV. Returns removed=0 if not found."""
     path = _spectra_csv_path(institution_slug, dataset_id)
     if not os.path.exists(path):
         return {"status": "ok", "removed": 0}

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'dataset_analytics_screen.dart'; 
 
+/// Placeholder screen listing available public datasets for browsing.
 class DatasetViewerScreen extends StatelessWidget {
   const DatasetViewerScreen({super.key});
 
@@ -23,7 +24,7 @@ class DatasetViewerScreen extends StatelessWidget {
             tags: ['PE', 'PP', 'PET', 'PS'],
             maintainers: 'Lucas e Pedro',
             color: Colors.orangeAccent,
-            destination: const DatasetAnalyticsScreen(), // Tela de destino
+            destination: const DatasetAnalyticsScreen(),
           ),
           
           _buildDatasetCard(
