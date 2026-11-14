@@ -2,42 +2,39 @@
 
 **App:** https://danmartsarr.github.io/Sistema/
 
-Identificação de microplásticos a partir de espectros de infravermelho (FTIR).
-O usuário envia um espectro (CSV) e o sistema responde qual polímero ele é —
-**EVA, PA, PE, PP, PS ou celulose** — com a confiança de cada classe e **quais
-faixas do espectro pesaram na decisão** (mapa de saliência sobre o número de onda).
+Microplastic identification from infrared (FTIR) spectra. Upload a spectrum
+(CSV) and the system answers which polymer it is — **EVA, PA, PE, PP, PS or
+cellulose** — with the confidence for each class and **which regions of the
+spectrum drove the decision** (a saliency map over wavenumber).
 
-Faz parte da pesquisa de doutorado sobre identificação de microplásticos com
-aprendizado profundo e IA explicável.
+## How it works
 
-## Como funciona
+1. **Pre-processing** — the spectrum is interpolated onto a fixed grid of
+   1,763 points (3998–600 cm⁻¹) and normalised with the training parameters
+   (`scaler_params.json`, produced by `extract_scaler.py`).
+2. **Classification** — a trained MLP (Keras, `MLP_best_model.h5`) returns the
+   probability of each of the six polymers.
+3. **Explanation** — the gradient of the output with respect to the input
+   (saliency) highlights the absorption bands that most influenced the answer,
+   so a specialist can check them against the material's chemistry.
 
-1. **Pré-processamento** — o espectro é interpolado para uma grade fixa de
-   1.763 pontos (3998–600 cm⁻¹) e normalizado com os parâmetros do treino
-   (`scaler_params.json`, gerado por `extract_scaler.py`).
-2. **Classificação** — uma rede MLP treinada (Keras, `MLP_best_model.h5`)
-   devolve a probabilidade de cada um dos seis polímeros.
-3. **Explicação** — o gradiente da saída em relação à entrada (saliência)
-   aponta as bandas de absorção que mais influenciaram a resposta, para o
-   especialista conferir se batem com a química do material.
-
-## Partes
+## Layout
 
 ```
-mlp_server.py        API de inferência (FastAPI): /predict, /predict_csv, armazenamento de espectros
-extract_scaler.py    extrai os parâmetros de normalização usados no treino
-MLP_best_model.h5    modelo treinado
-dataBases/           bases de espectros de referência
-deepmicroplastic/    app Flutter (web e mobile), publicado no GitHub Pages
-docs/                documentação do sistema (PDF)
+mlp_server.py        inference API (FastAPI): /predict, /predict_csv, spectra storage
+extract_scaler.py    extracts the normalisation parameters used in training
+MLP_best_model.h5    trained model
+dataBases/           reference spectra
+deepmicroplastic/    Flutter app (web and mobile), published on GitHub Pages
+docs/                system documentation (PDF, Portuguese)
 ```
 
-## Rodar a API
+## Run the API
 
 ```bash
 python3 -m venv .venv && .venv/bin/pip install tensorflow fastapi uvicorn pandas python-multipart
 .venv/bin/python mlp_server.py
 ```
 
-`POST /predict` recebe `{"wavenumbers": [...], "intensities": [...]}`;
-`POST /predict_csv` recebe o arquivo exportado pelo espectrômetro.
+`POST /predict` takes `{"wavenumbers": [...], "intensities": [...]}`;
+`POST /predict_csv` takes the file exported by the spectrometer.
